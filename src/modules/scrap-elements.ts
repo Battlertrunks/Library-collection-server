@@ -10,11 +10,10 @@ export async function getBooks(page: Page): Promise<BookListings> {
       const title: string = el.querySelector('.title-container')?.textContent.trim() || "";
       const price: string = el.querySelector("span")?.textContent.trim() || "";
       
-      // We can store the image thumbnail by using the domain name and adding onto the image path from the scrapped site
-      const thumbnail_url: string = `${!process.env.SITE_PAGE}${el.querySelector("img")?.getAttribute("data-original")}`;
-      const listing_url: string = `${!process.env.SITE_PAGE}${el.querySelector("a")?.getAttribute("href")}`
+      // We can store the link to the official page of the book
+      const listing_url: string = el.querySelector("a")?.getAttribute("href") || ""
       
-      return { title, price, thumbnail_url, listing_url, header: "", body: "" };
+      return { title, price, thumbnail_url: "", listing_url, body: "" };
     });
   })
 }
