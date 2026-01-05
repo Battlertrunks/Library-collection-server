@@ -1,7 +1,7 @@
 import type { Page } from "puppeteer";
 import db from "../data/database.js"
 import type { Statement } from "better-sqlite3";
-import { type BookListings } from "../api/web-scraper-endpoint.js";
+import { type BookListing, type BookListings } from "../api/web-scraper-endpoint.js";
 import 'dotenv/config';
 
 export async function getBooks(page: Page): Promise<BookListings> {
@@ -13,32 +13,28 @@ export async function getBooks(page: Page): Promise<BookListings> {
       // We can store the link to the official page of the book
       const listing_url: string = el.querySelector("a")?.getAttribute("href") || ""
       
-      return { title, price, thumbnail_url: "", listing_url, body: "" };
+      return { title, price, thumbnail_url: "", listing_url, description: "" };
     });
   })
 }
 
-export async function storeBooks(books: BookListings) {
+/**
+ * Store the desired book data into the database
+ * @param {BookListing} book - The book being stored to the database
+ */
+export function storeBook(book: BookListing): void {
   try {
-    if (!Array.isArray(books) || !books.length) {
-      throw new Error("Unable to save books to database");
+    if (book === null || typeof book !== "object" || Array.isArray(book)) {
+      throw new Error("storeBooks: Incorrect parameter type passed through");
     }
 
     const insert: Statement = db.prepare(`
-      INSERT INTO book_listings (title, summary, price, thumbnail_url, listing_url)
-        VALUES (@title, @summary, @price, @thumbnail_url, @listing_url);
+      INSERT INTO book_listings (title, price, thumbnail_url, listing_url, description)
+        VALUES (@title, @price, @thumbnail_url, @listing_url, @description);
     `);
 
-    const insertMany = db.transaction((books) => {
-      for (const book of books) {
-        console.log(book);
-        insert.run(book);
-        break;
-      }
-    })
-
-    insertMany(books);
+    insert.run(book)
   } catch (error: any) {
-    throw new Error("Could not store book to database:", error);
+    throw new Error("Could not store book to database:", error.message);
   }
 }

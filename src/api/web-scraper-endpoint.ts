@@ -1,15 +1,17 @@
 import Express from "express";
 import puppeteer from "puppeteer";
-import { getBooks, storeBooks } from "../modules/scrap-elements.js";
+import { getBooks, storeBook } from "../modules/scrap-elements.js";
 const router = Express.Router();
 
-export type BookListings = Array<{
+export type BookListing = {
   title:            string;
   price:            string;
   thumbnail_url:    string;
   listing_url:      string;
-  body:             string;
-}>;
+  description:      string;
+}
+
+export type BookListings = Array<BookListing>;
 
 // Will run rarely as this will be to store data to the database without scraping repeatedly
 // TODO: Setup a cron job and make behavior to not add books already in database. Look for new books
@@ -34,33 +36,29 @@ router.post("/", async (req, res): Promise<Express.Response> => {
     });
 
     const bookPages: Array<string> | undefined = process.env.BOOKS_API_ENDPOINT?.split(",");
-    console.log(bookPages);
     if (!bookPages) return res.sendStatus(404);
 
     for (const endpoint of bookPages) {
-       console.log("pre goto");
        await page.goto(`${endpoint}${process.env.SUB_PATH}`);
-       console.log("post goto")
        allBooks.push(...(await getBooks(page)));
-       console.log(allBooks?.length)
     }
 
     await browser.close();
   } catch(error: any) {
-    console.log(error);
     return res.status(500).send("Unable to retrieve data: " + error.message);
   }
 
   const timeout = async (delay: number) => await new Promise(res => setTimeout(res, delay));
 
   // Easier alternative to get the book cover thumbnail to lessen web scraping
-  for (const book of allBooks) {
+  for (const [i, book] of allBooks.entries()) {
     try {
-      const url: string = `https://www.googleapis.com/books/v1/volumes?q=${
-       process.env.SERIES + "+" + book.title.replaceAll(" ", "+")
+      const params: URLSearchParams = new URLSearchParams();
+      params.append("q", process.env.SERIES + " " + book.title)
+      const url: string = `https://www.googleapis.com/books/v1/volumes?${
+       params.toString()
       }`;
 
-      console.log(url);
       const response: Response = await fetch(url);
       if (!response.ok) throw new Error("Failed to get response from 'googleapis'");
 
@@ -78,20 +76,19 @@ router.post("/", async (req, res): Promise<Express.Response> => {
       // If there are results, the top one will most likely be the data needed.
       // Will think of a better implementation later possibly
       book.thumbnail_url = result?.items[0]?.volumeInfo?.imageLinks?.thumbnail;
-      book.body = result?.items[0]?.volumeInfo?.description
+      book.description = result?.items[0]?.volumeInfo?.description
+
+      console.log(`Completed book ${i+1} of ${allBooks.length}`);
+
+      storeBook(book);
+
+      break;
       
       await timeout(61000); // ms
     }  catch (error) {
-      console.log(error);
       return res.sendStatus(500);
     }
   };
-
-  try {
-    await storeBooks(allBooks);
-  } catch(error: any) {
-    return res.status(500).send(error?.message || "Unable to store books to database");
-  }
 
   return res.status(201).send(JSON.stringify(allBooks));
 })
