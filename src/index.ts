@@ -2,7 +2,7 @@ import { expressMiddleware } from "@as-integrations/express5";
 import { ApolloServer } from "@apollo/server";
 import resolvers from "./resolvers/resolvers.js";
 import { typeDefs } from "./schemas/typeDefs.js";
-import getLibrary from "./api/web-scraper-endpoint.js"
+import getLibrary from "./api/retrieves-books.js"
 
 import Express from "express";
 import cors from "cors";

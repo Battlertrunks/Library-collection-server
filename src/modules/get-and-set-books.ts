@@ -1,7 +1,7 @@
 import type { Page } from "puppeteer";
 import db from "../data/database.js"
 import type { Statement } from "better-sqlite3";
-import { type BookListing, type BookListings } from "../api/web-scraper-endpoint.js";
+import { type BookListing, type BookListings } from "../api/retrieves-books.js";
 import 'dotenv/config';
 
 export async function getBooks(page: Page): Promise<BookListings> {
@@ -13,7 +13,17 @@ export async function getBooks(page: Page): Promise<BookListings> {
       // We can store the link to the official page of the book
       const listing_url: string = el.querySelector("a")?.getAttribute("href") || ""
       
-      return { title, price, thumbnail_url: "", listing_url, description: "" };
+      return {
+        title,
+        isbn: "",
+        authors: "",
+        price: price.replace(/s+/g, " ").trim(),
+        thumbnail_url: "",
+        listing_url,
+        description: "",
+        published_date: null,
+        genres: ""
+      };
     });
   })
 }
@@ -24,17 +34,21 @@ export async function getBooks(page: Page): Promise<BookListings> {
  */
 export function storeBook(book: BookListing): void {
   try {
-    if (book === null || typeof book !== "object" || Array.isArray(book)) {
-      throw new Error("storeBooks: Incorrect parameter type passed through");
-    }
-
     const insert: Statement = db.prepare(`
-      INSERT INTO book_listings (title, price, thumbnail_url, listing_url, description)
-        VALUES (@title, @price, @thumbnail_url, @listing_url, @description);
+      INSERT INTO book_listings (title, isbn, authors, price, thumbnail_url, listing_url, description, published_date, genres)
+        VALUES (@title, @isbn, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
+    console.log(book);
     insert.run(book)
   } catch (error: any) {
     throw new Error("Could not store book to database:", error.message);
   }
+}
+
+export function checkIfBookExists(book: BookListing): boolean {
+  if (!book.title) return false; // if no title, then no legit book
+
+  const row: unknown = db.prepare("SELECT * FROM book_listings WHERE title = ?").get(book.title);
+  return !!row;
 }

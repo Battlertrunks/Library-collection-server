@@ -1,14 +1,18 @@
 import Express from "express";
 import puppeteer from "puppeteer";
-import { getBooks, storeBook } from "../modules/scrap-elements.js";
+import { checkIfBookExists, getBooks, storeBook } from "../modules/get-and-set-books.js";
 const router = Express.Router();
 
 export type BookListing = {
   title:            string;
+  isbn:             string;
+  authors:          string;
   price:            string;
   thumbnail_url:    string;
   listing_url:      string;
   description:      string;
+  published_date:   string | null;
+  genres:           string;
 }
 
 export type BookListings = Array<BookListing>;
@@ -53,6 +57,13 @@ router.post("/", async (req, res): Promise<Express.Response> => {
   // Easier alternative to get the book cover thumbnail to lessen web scraping
   for (const [i, book] of allBooks.entries()) {
     try {
+
+      // Check if book exists first before calling Google APIs for books...
+      if (checkIfBookExists(book)) {
+        console.log("Duplicate Found:", book.title);
+        continue;
+      }
+
       const params: URLSearchParams = new URLSearchParams();
       params.append("q", process.env.SERIES + " " + book.title)
       const url: string = `https://www.googleapis.com/books/v1/volumes?${
@@ -75,13 +86,19 @@ router.post("/", async (req, res): Promise<Express.Response> => {
 
       // If there are results, the top one will most likely be the data needed.
       // Will think of a better implementation later possibly
-      book.thumbnail_url = result?.items[0]?.volumeInfo?.imageLinks?.thumbnail;
-      book.description = result?.items[0]?.volumeInfo?.description
+      book.isbn = result?.items[0]?.volumeInfo?.industryIdentifiers?.find((ident: any) => {
+        if (ident.type === "ISBN_13") return ident.identifier;
+      })?.identifier || result?.items[0]?.volumeInfo?.industryIdentifiers[0].identifier;
+
+      book.authors          = result?.items[0]?.volumeInfo?.authors.join(",");
+      book.thumbnail_url    = result?.items[0]?.volumeInfo?.imageLinks?.thumbnail; // use a placeholder image?
+      book.description      = result?.items[0]?.volumeInfo?.description || "";
+      book.published_date   = new Date(result?.items[0]?.volumeInfo?.publishedDate).toISOString();
+      book.genres           = result?.items[0]?.volumeInfo?.categories?.join(",") || "";
 
       console.log(`Completed book ${i+1} of ${allBooks.length}`);
 
       storeBook(book);
-
       break;
       
       await timeout(61000); // ms
