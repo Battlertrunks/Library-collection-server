@@ -2,7 +2,7 @@ import { expressMiddleware } from "@as-integrations/express5";
 import { ApolloServer } from "@apollo/server";
 import resolvers from "./resolvers/resolvers.js";
 import { typeDefs } from "./schemas/typeDefs.js";
-import getLibrary from "./api/retrieves-books.js"
+import retrieveBooksRouter from "./api/retrieves-books.js"
 
 import Express from "express";
 import cors from "cors";
@@ -24,7 +24,7 @@ async function init(): Promise<void> {
   app.use(Express.json());
   app.use("/graphql", expressMiddleware(apolloServer));
 
-  app.use("/retrieve-book-information", getLibrary);
+  app.use("/retrieve-book-information", retrieveBooksRouter);
 
   app.listen(port, () => {
     console.log(`App server is listening on port: ${port}`);
@@ -32,6 +32,6 @@ async function init(): Promise<void> {
 }
 
 init().catch((err) => {
-  console.error("Failed to start server:", err);
+  console.log("Failed to start server:", err);
   process.exit(1);
 });

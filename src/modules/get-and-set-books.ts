@@ -1,7 +1,7 @@
 import type { Page } from "puppeteer";
 import db from "../data/database.js"
 import type { Statement } from "better-sqlite3";
-import { type BookListing, type BookListings } from "../api/retrieves-books.js";
+import { type BookListing, type BookListings } from "../model/BookListing.js";
 import 'dotenv/config';
 
 export async function getBooks(page: Page): Promise<BookListings> {
@@ -39,7 +39,6 @@ export function storeBook(book: BookListing): void {
         VALUES (@title, @isbn, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
-    console.log(book);
     insert.run(book)
   } catch (error: any) {
     throw new Error("Could not store book to database:", error.message);

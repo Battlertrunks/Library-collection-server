@@ -1,24 +1,13 @@
 import Express from "express";
 import puppeteer from "puppeteer";
 import { checkIfBookExists, getBooks, storeBook } from "../modules/get-and-set-books.js";
+import { type BookListings } from "../model/BookListing.js";
+
 const router = Express.Router();
 
-export type BookListing = {
-  title:            string;
-  isbn:             string;
-  authors:          string;
-  price:            string;
-  thumbnail_url:    string;
-  listing_url:      string;
-  description:      string;
-  published_date:   string | null;
-  genres:           string;
-}
+const TIMEOUT_AMOUNT: number = 2000; // 2 seconds
 
-export type BookListings = Array<BookListing>;
-
-// Will run rarely as this will be to store data to the database without scraping repeatedly
-// TODO: Setup a cron job and make behavior to not add books already in database. Look for new books
+// TODO: Make a cron job to call this route. Realistic to run 2 or 3 months at a time?
 router.post("/", async (req, res): Promise<Express.Response> => {
   const allBooks: BookListings = []
 
@@ -54,6 +43,9 @@ router.post("/", async (req, res): Promise<Express.Response> => {
 
   const timeout = async (delay: number) => await new Promise(res => setTimeout(res, delay));
 
+  // If we are getting throttled on google's API, increase the delay to avoid needless calls
+  let limitDelayExpo: number = 0; // seconds
+
   // Easier alternative to get the book cover thumbnail to lessen web scraping
   for (const [i, book] of allBooks.entries()) {
     try {
@@ -71,6 +63,17 @@ router.post("/", async (req, res): Promise<Express.Response> => {
       }`;
 
       const response: Response = await fetch(url);
+
+      // Too many requests
+      if (response.status === 429) {
+        // raise the exponent up by one per "Too Many Request" errors
+        const delayBy = Math.pow(2, limitDelayExpo++);
+        await timeout(delayBy);
+        continue;
+      }
+
+      limitDelayExpo = 0; // Reset the exponent
+
       if (!response.ok) throw new Error("Failed to get response from 'googleapis'");
 
       const result: any = await response.json();
@@ -80,29 +83,33 @@ router.post("/", async (req, res): Promise<Express.Response> => {
 
       // No results, skip the rest of the logic
       if (!result?.items?.length) {
-        await timeout(61000); // ms
+        await timeout(TIMEOUT_AMOUNT);
         continue;
       }
 
       // If there are results, the top one will most likely be the data needed.
       // Will think of a better implementation later possibly
-      book.isbn = result?.items[0]?.volumeInfo?.industryIdentifiers?.find((ident: any) => {
-        if (ident.type === "ISBN_13") return ident.identifier;
-      })?.identifier || result?.items[0]?.volumeInfo?.industryIdentifiers[0].identifier;
+      book.isbn = result?.items[0]?.volumeInfo?.industryIdentifiers.find((ident: any) => {
+        if (ident.type === "ISBN_13") {
+          return ident?.identifier;
+        } else if (ident.type === "ISBN_10") {
+          return ident?.identifier; // If the books does not have a ISBN_13, use the ISBN_10 then...
+        }
+      })?.identifier || "No ISBN"; // backup...
 
       book.authors          = result?.items[0]?.volumeInfo?.authors.join(",");
       book.thumbnail_url    = result?.items[0]?.volumeInfo?.imageLinks?.thumbnail; // use a placeholder image?
       book.description      = result?.items[0]?.volumeInfo?.description || "";
       book.published_date   = new Date(result?.items[0]?.volumeInfo?.publishedDate).toISOString();
-      book.genres           = result?.items[0]?.volumeInfo?.categories?.join(",") || "";
+      book.genres           = result?.items[0]?.volumeInfo?.categories.join(",") || "";
 
       console.log(`Completed book ${i+1} of ${allBooks.length}`);
 
       storeBook(book);
-      break;
       
-      await timeout(61000); // ms
-    }  catch (error) {
+      await timeout(TIMEOUT_AMOUNT);
+    }  catch (error: any) {
+      console.error(error.message);
       return res.sendStatus(500);
     }
   };
