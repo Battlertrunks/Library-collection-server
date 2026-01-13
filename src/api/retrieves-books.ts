@@ -1,14 +1,81 @@
-import Express from "express";
+import { type BookListing } from './../model/BookListing.js';
+import Express, { Router, type Request, type Response } from "express";
 import puppeteer from "puppeteer";
 import { checkIfBookExists, getBooks, storeBook } from "../modules/get-and-set-books.js";
 import { type BookListings } from "../model/BookListing.js";
+import { formatBook } from "../modules/format-book.js";
 
-const router = Express.Router();
+const router: Router = Express.Router();
 
 const TIMEOUT_AMOUNT: number = 2000; // 2 seconds
 
+/**
+ * After data has been retrieved from scraper, format the rest of the book data from Google's Book API
+ * @param {BookListings} allBooks - All the book data fetched
+ * @returns {BookListings} - The finalized formatting of data for the books
+ */
+const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> => {
+  const timeout = async (delay: number) => await new Promise(res => setTimeout(res, delay));
+
+  // If we are getting throttled on google's API, increase the delay to avoid needless calls
+  let limitDelayExpo: number = 0; // seconds
+
+  // Easier alternative to get the book cover thumbnail to lessen web scraping
+  for (const [i, book] of allBooks.entries()) {
+    try {
+
+      // Check if book exists first before calling Google APIs for books...
+      if (checkIfBookExists(book)) {
+        console.log("Duplicate Found:", book.title);
+        continue;
+      }
+
+      const params: URLSearchParams = new URLSearchParams();
+      params.append("q", process.env.SERIES + " " + book.title)
+      const url: string = `https://www.googleapis.com/books/v1/volumes?${
+       params.toString()
+      }`;
+
+      const response: any = await fetch(url);
+
+      // Too many requests
+      if (response.status === 429) {
+        // raise the exponent up by one per "Too Many Request" errors
+        const delayBy = Math.pow(2, limitDelayExpo++);
+        await timeout(delayBy);
+        continue;
+      }
+
+      limitDelayExpo = 0; // Reset the exponent
+
+      if (!response.ok) throw new Error("Failed to get response from 'googleapis'");
+
+      const result: any = await response.json();
+
+      // No results, skip the rest of the logic
+      if (!result?.items?.length) {
+        await timeout(TIMEOUT_AMOUNT);
+        continue;
+      }
+
+      // Format the book into the finalized object to send out
+      const formattedBook: BookListing = formatBook(book, result);
+      storeBook(formattedBook);
+      
+      console.log(`Completed book ${i+1} of ${allBooks.length}`);
+      
+      await timeout(TIMEOUT_AMOUNT);
+    }  catch (error: any) {
+      console.error(error.message);
+      throw new Error("Book retrieval from Google Books API failed:", error);
+    }
+  };
+
+  return allBooks;
+};
+
 // TODO: Make a cron job to call this route. Realistic to run 2 or 3 months at a time?
-router.post("/", async (req, res): Promise<Express.Response> => {
+router.post("/", async (req: Request, res: Response): Promise<Express.Response> => {
   const allBooks: BookListings = []
 
   try {
@@ -41,80 +108,12 @@ router.post("/", async (req, res): Promise<Express.Response> => {
     return res.status(500).send("Unable to retrieve data: " + error.message);
   }
 
-  const timeout = async (delay: number) => await new Promise(res => setTimeout(res, delay));
-
-  // If we are getting throttled on google's API, increase the delay to avoid needless calls
-  let limitDelayExpo: number = 0; // seconds
-
-  // Easier alternative to get the book cover thumbnail to lessen web scraping
-  for (const [i, book] of allBooks.entries()) {
-    try {
-
-      // Check if book exists first before calling Google APIs for books...
-      if (checkIfBookExists(book)) {
-        console.log("Duplicate Found:", book.title);
-        continue;
-      }
-
-      const params: URLSearchParams = new URLSearchParams();
-      params.append("q", process.env.SERIES + " " + book.title)
-      const url: string = `https://www.googleapis.com/books/v1/volumes?${
-       params.toString()
-      }`;
-
-      const response: Response = await fetch(url);
-
-      // Too many requests
-      if (response.status === 429) {
-        // raise the exponent up by one per "Too Many Request" errors
-        const delayBy = Math.pow(2, limitDelayExpo++);
-        await timeout(delayBy);
-        continue;
-      }
-
-      limitDelayExpo = 0; // Reset the exponent
-
-      if (!response.ok) throw new Error("Failed to get response from 'googleapis'");
-
-      const result: any = await response.json();
-      
-      // Add the domain name to the link
-      book.listing_url = process.env.SITE_PAGE + book.listing_url;
-
-      // No results, skip the rest of the logic
-      if (!result?.items?.length) {
-        await timeout(TIMEOUT_AMOUNT);
-        continue;
-      }
-
-      // If there are results, the top one will most likely be the data needed.
-      // Will think of a better implementation later possibly
-      book.isbn = result?.items[0]?.volumeInfo?.industryIdentifiers.find((ident: any) => {
-        if (ident.type === "ISBN_13") {
-          return ident?.identifier;
-        } else if (ident.type === "ISBN_10") {
-          return ident?.identifier; // If the books does not have a ISBN_13, use the ISBN_10 then...
-        }
-      })?.identifier || "No ISBN"; // backup...
-
-      book.authors          = result?.items[0]?.volumeInfo?.authors.join(",");
-      book.thumbnail_url    = result?.items[0]?.volumeInfo?.imageLinks?.thumbnail; // use a placeholder image?
-      book.description      = result?.items[0]?.volumeInfo?.description || "";
-      book.published_date   = new Date(result?.items[0]?.volumeInfo?.publishedDate).toISOString();
-      book.genres           = result?.items[0]?.volumeInfo?.categories.join(",") || "";
-
-      console.log(`Completed book ${i+1} of ${allBooks.length}`);
-
-      storeBook(book);
-      
-      await timeout(TIMEOUT_AMOUNT);
-    }  catch (error: any) {
-      console.error(error.message);
-      return res.sendStatus(500);
-    }
-  };
-
-  return res.status(201).send(JSON.stringify(allBooks));
+  try {
+    const formattedAllBooks: BookListings = await requestBookInfo(allBooks);
+    return res.status(201).send(JSON.stringify(formattedAllBooks));
+  } catch (error: any) {
+    return res.status(500).send(error.message);
+  }
 })
 
 export default router;
