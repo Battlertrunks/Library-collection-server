@@ -23,7 +23,6 @@ const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> =>
   // Easier alternative to get the book cover thumbnail to lessen web scraping
   for (const [i, book] of allBooks.entries()) {
     try {
-
       // Check if book exists first before calling Google APIs for books...
       if (checkIfBookExists(book)) {
         console.log("Duplicate Found:", book.title);
@@ -39,6 +38,7 @@ const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> =>
       const response: any = await fetch(url);
 
       // Too many requests
+      console.log(response.status)
       if (response.status === 429) {
         // raise the exponent up by one per "Too Many Request" errors
         const delayBy = Math.pow(2, limitDelayExpo++);
@@ -61,9 +61,9 @@ const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> =>
       // Format the book into the finalized object to send out
       const formattedBook: BookListing = formatBook(book, result);
       storeBook(formattedBook);
-      
-      console.log(`Completed book ${i+1} of ${allBooks.length}`);
-      
+
+      console.log(`Completed book ${i+1} of ${allBooks.length}: book title: ${formattedBook?.title}`);
+
       await timeout(TIMEOUT_AMOUNT);
     }  catch (error: any) {
       console.error(error.message);

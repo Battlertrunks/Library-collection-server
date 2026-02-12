@@ -41,7 +41,7 @@ export function storeBook(book: BookListing): void {
 
     insert.run(book)
   } catch (error: any) {
-    throw new Error("Could not store book to database:", error.message);
+    throw new Error("Could not store book to database:", error);
   }
 }
 

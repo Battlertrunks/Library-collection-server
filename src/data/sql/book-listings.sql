@@ -1,7 +1,7 @@
 CREATE TABLE book_listings (
     id              INTEGER PRIMARY KEY,
     title           TEXT NOT NULL,
-    isbn            TEXT UNIQUE, -- certain books may not have an ISBN
+    isbn            TEXT, -- certain books may not have an ISBN
     authors         TEXT NOT NULL,
     price           REAL NOT NULL,
     thumbnail_url   TEXT,
