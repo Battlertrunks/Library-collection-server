@@ -9,13 +9,12 @@ export async function getBooks(page: Page): Promise<BookListings> {
     return elements.map((el: Element) => {
       const title: string = el.querySelector('.title-container')?.textContent.trim() || "";
       const price: string = el.querySelector("span")?.textContent.trim() || "";
-      
+
       // We can store the link to the official page of the book
       const listing_url: string = el.querySelector("a")?.getAttribute("href") || ""
-      
+
       return {
         title,
-        isbn: "",
         authors: "",
         price: price.replace(/s+/g, " ").trim(),
         thumbnail_url: "",
@@ -35,8 +34,8 @@ export async function getBooks(page: Page): Promise<BookListings> {
 export function storeBook(book: BookListing): void {
   try {
     const insert: Statement = db.prepare(`
-      INSERT INTO book_listings (title, isbn, authors, price, thumbnail_url, listing_url, description, published_date, genres)
-        VALUES (@title, @isbn, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
+      INSERT INTO book_listings (title, authors, price, thumbnail_url, listing_url, description, published_date, genres)
+        VALUES (@title, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
     insert.run(book)
