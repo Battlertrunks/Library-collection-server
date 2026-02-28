@@ -1,6 +1,5 @@
 export type BookListing = {
   title:            string;
-  isbn:             string;
   authors:          string;
   price:            string;
   thumbnail_url:    string;

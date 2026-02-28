@@ -30,7 +30,8 @@ const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> =>
       }
 
       const params: URLSearchParams = new URLSearchParams();
-      params.append("q", process.env.SERIES + " " + book.title)
+      params.append("q", process.env.SERIES + " " + book.title);
+      params.append("key", process.env.GOOGLE_BOOKS_API_KEY as string);
       const url: string = `https://www.googleapis.com/books/v1/volumes?${
        params.toString()
       }`;
@@ -38,8 +39,8 @@ const requestBookInfo = async (allBooks: BookListings): Promise<BookListings> =>
       const response: any = await fetch(url);
 
       // Too many requests
-      console.log(response.status)
       if (response.status === 429) {
+        console.log("Enhance your calm...");
         // raise the exponent up by one per "Too Many Request" errors
         const delayBy = Math.pow(2, limitDelayExpo++);
         await timeout(delayBy);
