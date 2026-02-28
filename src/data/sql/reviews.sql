@@ -4,5 +4,7 @@ CREATE TABLE reviews (
     review_description  TEXT NOT NULL,
     rating              INTEGER CHECK(rating >= 1 AND rating <= 5),
     review_date         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(books_collected) REFERENCES books_collected(id) ON DELETE CASCADE
 );
