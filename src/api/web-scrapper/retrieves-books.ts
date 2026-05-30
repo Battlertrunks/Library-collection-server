@@ -1,15 +1,22 @@
-import { type BookListing } from "../../model/BookListing.ts";
-import Express, { Router, type Request, type Response } from "express";
-import puppeteer from "puppeteer";
+import {
+  type BookListing,
+  type BookListings,
+  type GoogleBooksResponse,
+} from "../../model/BookListing.ts";
+import { Router, type Request, type Response } from "express";
+import puppeteer, {
+  type Browser,
+  type Page,
+  type HTTPRequest,
+} from "puppeteer";
 import {
   checkIfBookExists,
   getBooks,
   storeBook,
 } from "../../modules/get-and-set-books.ts";
-import { type BookListings } from "../../model/BookListing.ts";
 import { formatBook } from "../../modules/format-book.ts";
 
-const router: Router = Express.Router();
+const router: Router = Router();
 
 const TIMEOUT_AMOUNT: number = 2000; // 2 seconds
 
@@ -41,7 +48,7 @@ const requestBookInfo = async (
       params.append("key", process.env.GOOGLE_BOOKS_API_KEY as string);
       const url: string = `https://www.googleapis.com/books/v1/volumes?${params.toString()}`;
 
-      const response: any = await fetch(url);
+      const response = await fetch(url);
 
       // Too many requests
       if (response.status === 429) {
@@ -57,7 +64,7 @@ const requestBookInfo = async (
       if (!response.ok)
         throw new Error("Failed to get response from 'googleapis'");
 
-      const result: any = await response.json();
+      const result: GoogleBooksResponse = await response.json();
 
       // No results, skip the rest of the logic
       if (!result?.items?.length) {
@@ -74,9 +81,13 @@ const requestBookInfo = async (
       );
 
       await timeout(TIMEOUT_AMOUNT);
-    } catch (error: any) {
-      console.error(error.message);
-      throw new Error("Book retrieval from Google Books API failed:", error);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error(error.message);
+        throw new Error("Book retrieval from Google Books API failed:", error);
+      } else {
+        console.error("Unkown error:", error);
+      }
     }
   }
 
@@ -92,14 +103,14 @@ router.post(
     try {
       console.log("test");
       // You leave me no choice with your hidden APIs...
-      const browser: any = await puppeteer.launch({
+      const browser: Browser = await puppeteer.launch({
         args: ["--no-sandbox", "--disable-gpu"],
       });
-      const page: any = await browser.newPage();
+      const page: Page = await browser.newPage();
 
       // To save some time, we do not need the CSS and images to load for the scraper.
       await page.setRequestInterception(true);
-      page.on("request", (req: any) => {
+      page.on("request", (req: HTTPRequest) => {
         if (
           req.resourceType() === "image" ||
           req.resourceType() === "stylesheet"
@@ -120,15 +131,26 @@ router.post(
       }
 
       await browser.close();
-    } catch (error: any) {
-      return res.status(500).send("Unable to retrieve data: " + error.message);
+    } catch (error: unknown) {
+      if (error instanceof Error)
+        return res
+          .status(500)
+          .send("Unable to retrieve data: " + error.message);
+      else
+        return res
+          .status(500)
+          .json({ message: `Unkown error occurred: ${error}` });
     }
 
     try {
       const formattedAllBooks: BookListings = await requestBookInfo(allBooks);
       return res.status(201).send(JSON.stringify(formattedAllBooks));
-    } catch (error: any) {
-      return res.status(500).send(error.message);
+    } catch (error: unknown) {
+      if (error instanceof Error) return res.status(500).send(error.message);
+      else
+        return res
+          .status(500)
+          .json({ message: `Unkown error occurred: ${error}` });
     }
   },
 );

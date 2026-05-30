@@ -1,17 +1,19 @@
 import type { Page } from "puppeteer";
-import db from "../data/database.js"
+import db from "../data/database.js";
 import type { Statement } from "better-sqlite3";
 import { type BookListing, type BookListings } from "../model/BookListing.js";
-import 'dotenv/config';
+import "dotenv/config";
 
 export async function getBooks(page: Page): Promise<BookListings> {
-   return await page.$$eval(".product-container", (elements: Element[]) => {
+  return await page.$$eval(".product-container", (elements: Element[]) => {
     return elements.map((el: Element) => {
-      const title: string = el.querySelector('.title-container')?.textContent.trim() || "";
+      const title: string =
+        el.querySelector(".title-container")?.textContent.trim() || "";
       const price: string = el.querySelector("span")?.textContent.trim() || "";
 
       // We can store the link to the official page of the book
-      const listing_url: string = el.querySelector("a")?.getAttribute("href") || ""
+      const listing_url: string =
+        el.querySelector("a")?.getAttribute("href") || "";
 
       return {
         title,
@@ -21,10 +23,10 @@ export async function getBooks(page: Page): Promise<BookListings> {
         listing_url,
         description: "",
         published_date: null,
-        genres: ""
+        genres: "",
       };
     });
-  })
+  });
 }
 
 /**
@@ -38,15 +40,23 @@ export function storeBook(book: BookListing): void {
         VALUES (@title, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
-    insert.run(book)
-  } catch (error: any) {
-    throw new Error("Could not store book to database:", error);
+    insert.run(book);
+  } catch (error: unknown) {
+    if (error instanceof Error)
+      throw new Error("Could not store book to database:", error);
+    else
+      throw new Error(
+        "Unkown error occurred",
+        error ?? "... no error provided ...",
+      );
   }
 }
 
 export function checkIfBookExists(book: BookListing): boolean {
   if (!book.title) return false; // if no title, then no legit book
 
-  const row: unknown = db.prepare("SELECT * FROM book_listings WHERE title = ?").get(book.title);
+  const row: unknown = db
+    .prepare("SELECT * FROM book_listings WHERE title = ?")
+    .get(book.title);
   return !!row;
 }
