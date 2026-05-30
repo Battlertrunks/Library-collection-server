@@ -1,4 +1,16 @@
 export const booksDefs = `
+  type BookListings {
+    id: ID
+    title: String
+    authors: String
+    price: Int
+    thumbnail_url: String
+    listing_url: String
+    description: String
+    published_date: String
+    genres: String
+  }
+
   type Book {
     id: ID
     title: String
@@ -10,7 +22,7 @@ export const booksDefs = `
   }
 
   type Query {
-    books: [Book!]!
+    book_listings: [BookListings!]!
     book(id: ID!): Book
   }
 

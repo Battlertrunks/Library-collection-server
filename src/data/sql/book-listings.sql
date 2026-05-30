@@ -9,5 +9,6 @@ CREATE TABLE book_listings (
     published_date  DATE,
     genres          TEXT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    does_own        BOOLEAN DEFAULT FALSE
 );

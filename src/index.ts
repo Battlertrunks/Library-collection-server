@@ -1,8 +1,8 @@
 import { expressMiddleware } from "@as-integrations/express5";
 import { ApolloServer } from "@apollo/server";
-import resolvers from "./resolvers/resolvers.js";
-import { typeDefs } from "./schemas/typeDefs.js";
-import retrieveBooksRouter from "./api/retrieves-books.js"
+import resolvers from "./resolvers/resolvers.ts";
+import { typeDefs } from "./schemas/typeDefs.ts";
+import retrieveBooksRouter from "./api/web-scrapper/retrieves-books.ts";
 
 import Express from "express";
 import cors from "cors";
