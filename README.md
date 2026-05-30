@@ -11,17 +11,24 @@ This is the server component of a Library Collection project, which provides a G
   - Uses environment variables for configuration
   - Sets timeouts and user-agent headers to mimic human browsing behavior and avoid overloading target servers
   - Respects robots.txt rules of target websites and don't abuse scraping frequency. It's on you to ensure your scraping activities comply with the target website's terms of service.
+- Code quality tools: **ESLint** for linting and **Husky** for git hooks
+
 
 ## Installation
 
-1. Install the node modules:
+1. Install the dependencies using pnpm:
    ```bash
-   npm install
+   pnpm install
    ```
 2. Run the server (Should also build TypeScript and start the server):
    ```bash
-   npm start
+   pnpm start
    ```
+
+## Development
+
+This project uses **ESLint** for linting and **Husky** to run `lint-staged` before commits, ensuring code quality and consistency. You can manually run the linter using `pnpm lint`.
+
 
 ## Usage
 
