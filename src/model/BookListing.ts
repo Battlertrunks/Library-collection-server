@@ -1,7 +1,7 @@
 export type BookListing = {
   title: string;
   authors: string;
-  price: string;
+  price: number | null;
   thumbnail_url: string | null;
   listing_url: string;
   description: string | null;

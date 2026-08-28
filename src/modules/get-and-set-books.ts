@@ -4,12 +4,20 @@ import type { Statement } from "better-sqlite3";
 import { type BookListing, type BookListings } from "../model/BookListing.js";
 import "dotenv/config";
 
+function parsePrice(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  if (!cleaned) return null;
+  const parsed = Number.parseFloat(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function getBooks(page: Page): Promise<BookListings> {
   return await page.$$eval(".product-container", (elements: Element[]) => {
     return elements.map((el: Element) => {
       const title: string =
         el.querySelector(".title-container")?.textContent.trim() || "";
-      const price: string = el.querySelector("span")?.textContent.trim() || "";
+      const priceText: string =
+        el.querySelector("span")?.textContent.trim() || "";
 
       // We can store the link to the official page of the book
       const listing_url: string =
@@ -18,7 +26,7 @@ export async function getBooks(page: Page): Promise<BookListings> {
       return {
         title,
         authors: "",
-        price: price.replace(/s+/g, " ").trim(),
+        price: parsePrice(priceText),
         thumbnail_url: "",
         listing_url,
         description: "",
@@ -40,7 +48,7 @@ export function storeBook(book: BookListing): void {
         VALUES (@title, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
-    insert.run(book);
+    insert.run({ ...book, price: book.price ?? 0 });
   } catch (error: unknown) {
     if (error instanceof Error)
       throw new Error("Could not store book to database:", error);
