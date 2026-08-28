@@ -23,26 +23,27 @@
   "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
-    "eslint": "^10.4.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^10.9.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.5",
-    "prettier": "3.8.3",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.60.0",
-    "vitest": "^4.1.7"
+    "lint-staged": "^17.3.0",
+    "prettier": "3.9.6",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",
     "@as-integrations/express5": "^1.1.2",
     "@types/express": "^5.0.6",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.3",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "http": "0.0.1-security",
-    "puppeteer": "^25.1.0"
+    "puppeteer": "^25.9.0"
   }
 }
