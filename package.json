@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "npx tsx watch src/index.js",
+    "start": "tsx watch src/index.ts",
     "test": "vitest",
     "prepare": "husky",
     "lint": "eslint .",
@@ -30,6 +30,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "prettier": "3.9.6",
+    "tsx": "^4.23.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
