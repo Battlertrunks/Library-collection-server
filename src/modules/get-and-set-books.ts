@@ -1,23 +1,14 @@
 import type { Page } from "puppeteer";
-import db from "../data/database.js";
+import db from "../data/database";
 import type { Statement } from "better-sqlite3";
-import { type BookListing, type BookListings } from "../model/BookListing.js";
+import { type BookListing, type BookListings } from "../model/BookListing";
 import "dotenv/config";
-
-function parsePrice(raw: string): number | null {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  if (!cleaned) return null;
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 export async function getBooks(page: Page): Promise<BookListings> {
   return await page.$$eval(".product-container", (elements: Element[]) => {
     return elements.map((el: Element) => {
       const title: string =
         el.querySelector(".title-container")?.textContent.trim() || "";
-      const priceText: string =
-        el.querySelector("span")?.textContent.trim() || "";
 
       // We can store the link to the official page of the book
       const listing_url: string =
@@ -26,7 +17,6 @@ export async function getBooks(page: Page): Promise<BookListings> {
       return {
         title,
         authors: "",
-        price: parsePrice(priceText),
         thumbnail_url: "",
         listing_url,
         description: "",
@@ -44,11 +34,11 @@ export async function getBooks(page: Page): Promise<BookListings> {
 export function storeBook(book: BookListing): void {
   try {
     const insert: Statement = db.prepare(`
-      INSERT INTO book_listings (title, authors, price, thumbnail_url, listing_url, description, published_date, genres)
-        VALUES (@title, @authors, @price, @thumbnail_url, @listing_url, @description, @published_date, @genres);
+      INSERT INTO book_listings (title, authors, thumbnail_url, listing_url, description, published_date, genres)
+        VALUES (@title, @authors, @thumbnail_url, @listing_url, @description, @published_date, @genres);
     `);
 
-    insert.run({ ...book, price: book.price ?? 0 });
+    insert.run(book);
   } catch (error: unknown) {
     if (error instanceof Error)
       throw new Error("Could not store book to database:", error);

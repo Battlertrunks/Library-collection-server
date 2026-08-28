@@ -3,7 +3,6 @@ export const booksDefs = `
     id: ID
     title: String
     authors: String
-    price: Float
     thumbnail_url: String
     listing_url: String
     description: String
