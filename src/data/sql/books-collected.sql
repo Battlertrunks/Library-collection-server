@@ -10,3 +10,8 @@ CREATE TABLE books_collected (
     FOREIGN KEY(book_series_id) REFERENCES series_collected(id) ON DELETE CASCADE,
     UNIQUE(book_listing_id, book_series_id)
 );
+
+-- Enforces at most one Collected Book per listing (see client ADR 0001);
+-- NULL book_listing_id rows are series-owned and exempt.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_books_collected_listing
+    ON books_collected(book_listing_id) WHERE book_series_id IS NULL;

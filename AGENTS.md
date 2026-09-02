@@ -68,6 +68,7 @@ SQLite insert (`storeBook`).
 
 ## Gotchas
 
-- Mutations declared in SDL (`addNewBook`, `updateExistingBook`, `deleteExistingBook`) are NOT implemented (`Mutation: {}` in resolvers).
+- Legacy `Book` type, `book(id)` query, and Mutation SDL were removed (2026-09); the `books` table they referenced is not part of the SQL schema.
+- `books_collected` rows are joined to `book_listings` via LEFT JOIN in the `books_collected` resolver — series-owned rows (`book_listing_id IS NULL`) return null listing fields.
 - Keep scraping ethical: preserve timeouts, request interception, and rate-limit backoff; respect robots.txt.
 - Port 3000 is hardcoded in `index.ts`.
