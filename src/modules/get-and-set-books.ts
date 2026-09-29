@@ -40,13 +40,11 @@ export function storeBook(book: BookListing): void {
 
     insert.run(book);
   } catch (error: unknown) {
-    if (error instanceof Error)
-      throw new Error("Could not store book to database:", error);
-    else
-      throw new Error(
-        "Unkown error occurred",
-        error ?? "... no error provided ...",
-      );
+    if (error instanceof Error) {
+      throw new Error("Could not store book to database", { cause: error });
+    } else {
+      throw new Error("Unknown error occurred", { cause: error });
+    }
   }
 }
 

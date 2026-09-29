@@ -67,6 +67,25 @@ describe("storeBook", () => {
       genres: null,
     });
   });
+
+  it("preserves the underlying database error as the cause", () => {
+    const invalid = makeBookListing({ title: null as unknown as string });
+
+    let thrown: unknown;
+    try {
+      storeBook(invalid);
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const error = thrown as Error;
+    expect(error.message).toBe("Could not store book to database");
+    expect(error.cause).toBeInstanceOf(Error);
+    expect((error.cause as Error).message).toContain(
+      "NOT NULL constraint failed",
+    );
+  });
 });
 
 describe("checkIfBookExists", () => {
