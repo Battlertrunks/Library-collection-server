@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { expressMiddleware } from "@as-integrations/express5";
 import { ApolloServer } from "@apollo/server";
 import resolvers from "./resolvers/resolvers.ts";

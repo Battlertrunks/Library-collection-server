@@ -2,7 +2,6 @@ import type { Page } from "puppeteer";
 import db from "../data/database";
 import type { Statement } from "better-sqlite3";
 import { type BookListing, type BookListings } from "../model/BookListing";
-import "dotenv/config";
 
 export async function getBooks(page: Page): Promise<BookListings> {
   return await page.$$eval(".product-container", (elements: Element[]) => {
@@ -40,13 +39,11 @@ export function storeBook(book: BookListing): void {
 
     insert.run(book);
   } catch (error: unknown) {
-    if (error instanceof Error)
-      throw new Error("Could not store book to database:", error);
-    else
-      throw new Error(
-        "Unkown error occurred",
-        error ?? "... no error provided ...",
-      );
+    if (error instanceof Error) {
+      throw new Error("Could not store book to database", { cause: error });
+    } else {
+      throw new Error("Unknown error occurred", { cause: error });
+    }
   }
 }
 

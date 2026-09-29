@@ -19,10 +19,11 @@ Package manager is **pnpm** — never use npm/yarn.
 | `pnpm start` | Dev server (watch mode), port 3000 |
 | `pnpm build` | Type-check only (`tsc`, `noEmit: true`) |
 | `pnpm lint` / `pnpm lint:fix` | ESLint (flat config) |
-| `pnpm test` | Vitest in watch mode (no test files exist yet) |
+| `pnpm test` | Vitest in watch mode |
+| `pnpm test:run` | Vitest single run (CI) |
 
-Verification before finishing any task: `pnpm lint` and `pnpm build` must pass.
-If you add tests, co-locate as `*.test.ts` (Vitest is configured, unused).
+Verification before finishing any task: `pnpm lint`, `pnpm build`, and
+`pnpm test:run` must pass.
 
 ## Architecture
 
@@ -55,9 +56,30 @@ SQLite insert (`storeBook`).
 - Default exports: resolvers, router, db. Named exports: types, defs, helpers.
 - GraphQL fields use snake_case (mirrors DB columns).
 
+## Testing
+
+Vitest, colocated as `*.test.ts` next to the code under test. `pnpm test`
+watches; `pnpm test:run` is the single-run/CI variant.
+
+- `vitest.setup.ts` globally replaces `src/data/database.ts` with a fresh
+  in-memory database, so no test can touch the real `library.db`. Never
+  import the real database module unmocked.
+- `src/test/database.ts` builds the schema by executing the real
+  `src/data/sql/*.sql` files and resets rows before every test; factories live
+  in `src/test/`. The reset reads its table list from the schema and refuses to
+  run against a non-in-memory database, so an unmocked import fails loudly
+  instead of truncating `library.db`.
+- Resolver tests run queries through Apollo's `executeOperation` — no HTTP
+  server is started.
+- No test may hit the network (scraper coverage is a future effort);
+  `vitest.setup.ts` installs a throwing `fetch` stub, so a test that needs
+  `fetch` must stub it itself.
+- CI runs lint, typecheck, and tests as separate workflows
+  (`.github/workflows/lint.yml`, `typecheck.yml`, `test.yml`) on PRs.
+
 ## Environment & Database
 
-- Env vars (dotenv, `.env` is gitignored — never commit or print values):
+- Env vars (`src/index.ts` loads dotenv; `.env` is gitignored — never commit or print values):
   `GOOGLE_BOOKS_API_KEY`, `SITE_PAGE`, `SUB_PATH`, `BOOKS_API_ENDPOINT` (comma-separated), `SERIES`
 - DB file `library.db` at project root (gitignored). Do not commit `*.db*`.
 - `pnpm-workspace.yaml` whitelists native builds (better-sqlite3, puppeteer, @apollo/protobufjs) — keep intact.

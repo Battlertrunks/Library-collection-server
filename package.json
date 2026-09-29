@@ -1,6 +1,7 @@
 {
   "name": "server",
   "version": "1.0.0",
+  "packageManager": "pnpm@11.4.0",
   "description": "",
   "main": "index.js",
   "type": "module",
@@ -8,6 +9,7 @@
     "build": "tsc",
     "start": "tsx watch src/index.ts",
     "test": "vitest",
+    "test:run": "vitest run",
     "prepare": "husky",
     "lint": "eslint .",
     "lint:fix": "eslint --fix ."
