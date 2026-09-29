@@ -19,10 +19,11 @@ Package manager is **pnpm** — never use npm/yarn.
 | `pnpm start` | Dev server (watch mode), port 3000 |
 | `pnpm build` | Type-check only (`tsc`, `noEmit: true`) |
 | `pnpm lint` / `pnpm lint:fix` | ESLint (flat config) |
-| `pnpm test` | Vitest in watch mode (no test files exist yet) |
+| `pnpm test` | Vitest in watch mode |
+| `pnpm test:run` | Vitest single run (CI) |
 
-Verification before finishing any task: `pnpm lint` and `pnpm build` must pass.
-If you add tests, co-locate as `*.test.ts` (Vitest is configured, unused).
+Verification before finishing any task: `pnpm lint`, `pnpm build`, and
+`pnpm test:run` must pass.
 
 ## Architecture
 
@@ -54,6 +55,22 @@ SQLite insert (`storeBook`).
 - Errors: `catch (error: unknown)`, narrow via `error instanceof Error`.
 - Default exports: resolvers, router, db. Named exports: types, defs, helpers.
 - GraphQL fields use snake_case (mirrors DB columns).
+
+## Testing
+
+Vitest, colocated as `*.test.ts` next to the code under test. `pnpm test`
+watches; `pnpm test:run` is the single-run/CI variant.
+
+- `vitest.setup.ts` globally replaces `src/data/database.ts` with a fresh
+  in-memory database, so no test can touch the real `library.db`. Never
+  import the real database module unmocked.
+- `src/test/database.ts` builds the schema by executing the real
+  `src/data/sql/*.sql` files and resets rows between tests; factories live in
+  `src/test/`.
+- Resolver tests run queries through Apollo's `executeOperation` — no HTTP
+  server is started.
+- No test may hit the network (scraper coverage is a future effort).
+- CI (`.github/workflows/ci.yml`) runs lint, build, and tests on PRs.
 
 ## Environment & Database
 
