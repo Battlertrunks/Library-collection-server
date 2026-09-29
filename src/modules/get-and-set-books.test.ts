@@ -1,14 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import db from "../data/database.ts";
 import { makeBookListing } from "../test/book-listing.ts";
-import { resetTestDatabase } from "../test/database.ts";
 import { checkIfBookExists, storeBook } from "./get-and-set-books.ts";
 
 describe("storeBook", () => {
-  beforeEach(() => {
-    resetTestDatabase(db);
-  });
-
   it("persists every field of a listing", () => {
     const book = makeBookListing({
       title: "Dune",
@@ -69,7 +64,10 @@ describe("storeBook", () => {
   });
 
   it("preserves the underlying database error as the cause", () => {
-    const invalid = makeBookListing({ title: null as unknown as string });
+    const invalid = makeBookListing({
+      // @ts-expect-error -- SQLite must reject a null title (NOT NULL constraint)
+      title: null,
+    });
 
     let thrown: unknown;
     try {
@@ -86,13 +84,29 @@ describe("storeBook", () => {
       "NOT NULL constraint failed",
     );
   });
+
+  it("keeps a non-Error throw as the cause", () => {
+    const failure: unknown = "database connection lost";
+    const prepare = vi.spyOn(db, "prepare").mockImplementation(() => {
+      throw failure;
+    });
+
+    let thrown: unknown;
+    try {
+      storeBook(makeBookListing());
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    prepare.mockRestore();
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe("Unknown error occurred");
+    expect((thrown as Error).cause).toBe(failure);
+  });
 });
 
 describe("checkIfBookExists", () => {
-  beforeEach(() => {
-    resetTestDatabase(db);
-  });
-
   it("returns true for a title that was stored", () => {
     storeBook(makeBookListing({ title: "Dune" }));
 

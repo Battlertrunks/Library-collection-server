@@ -25,7 +25,7 @@ const TIMEOUT_AMOUNT: number = 2000; // 2 seconds
  * @param {BookListings} allBooks - All the book data fetched
  * @returns {BookListings} - The finalized formatting of data for the books
  */
-const requestBookInfo = async (
+export const requestBookInfo = async (
   allBooks: BookListings,
 ): Promise<BookListings> => {
   const timeout = async (delay: number) =>
@@ -74,6 +74,10 @@ const requestBookInfo = async (
 
       // Format the book into the finalized object to send out
       const formattedBook: BookListing = formatBook(book, result);
+      // `formatBook` returns a new listing rather than mutating `book`, so the
+      // formatted copy is written back: `allBooks` is the enriched payload this
+      // function returns.
+      allBooks[i] = formattedBook;
       storeBook(formattedBook);
 
       console.log(
@@ -84,9 +88,11 @@ const requestBookInfo = async (
     } catch (error: unknown) {
       if (error instanceof Error) {
         console.error(error.message);
-        throw new Error("Book retrieval from Google Books API failed:", error);
+        throw new Error("Book retrieval from Google Books API failed", {
+          cause: error,
+        });
       } else {
-        console.error("Unkown error:", error);
+        console.error("Unknown error:", error);
       }
     }
   }
@@ -139,7 +145,7 @@ router.post(
       else
         return res
           .status(500)
-          .json({ message: `Unkown error occurred: ${error}` });
+          .json({ message: `Unknown error occurred: ${error}` });
     }
 
     try {
@@ -150,7 +156,7 @@ router.post(
       else
         return res
           .status(500)
-          .json({ message: `Unkown error occurred: ${error}` });
+          .json({ message: `Unknown error occurred: ${error}` });
     }
   },
 );

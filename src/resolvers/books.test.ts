@@ -1,8 +1,8 @@
 import { ApolloServer } from "@apollo/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import db from "../data/database.ts";
 import { typeDefs } from "../schemas/typeDefs.ts";
-import { resetTestDatabase } from "../test/database.ts";
+import { insertCollected, insertListing } from "../test/seed.ts";
 import resolvers from "./resolvers.ts";
 
 const server = new ApolloServer({ typeDefs, resolvers });
@@ -24,48 +24,10 @@ async function runQuery(query: string): Promise<Record<string, unknown>> {
   return data ?? {};
 }
 
-function insertListing(title: string, doesOwn = false): number {
-  const info = db
-    .prepare(
-      `INSERT INTO book_listings (title, authors, listing_url, does_own)
-       VALUES (@title, @authors, @listingUrl, @doesOwn)`,
-    )
-    .run({
-      title,
-      authors: `${title} Author`,
-      listingUrl: `/listings/${title}`,
-      doesOwn: doesOwn ? 1 : 0,
-    });
-
-  return Number(info.lastInsertRowid);
-}
-
-function insertCollected(
-  fields: { bookListingId?: number; bookSeriesId?: number },
-  datePurchased: string,
-): number {
-  const info = db
-    .prepare(
-      `INSERT INTO books_collected (book_listing_id, book_series_id, date_purchased)
-       VALUES (@bookListingId, @bookSeriesId, @datePurchased)`,
-    )
-    .run({
-      bookListingId: fields.bookListingId ?? null,
-      bookSeriesId: fields.bookSeriesId ?? null,
-      datePurchased,
-    });
-
-  return Number(info.lastInsertRowid);
-}
-
 describe("book_listings query", () => {
-  beforeEach(() => {
-    resetTestDatabase(db);
-  });
-
   it("returns only listings that are not owned yet", async () => {
-    insertListing("The Hobbit", false);
-    insertListing("The Silmarillion", true);
+    insertListing("The Hobbit");
+    insertListing("The Silmarillion", { doesOwn: true });
 
     const data = await runQuery("{ book_listings { title } }");
 
@@ -74,10 +36,6 @@ describe("book_listings query", () => {
 });
 
 describe("books_collected query", () => {
-  beforeEach(() => {
-    resetTestDatabase(db);
-  });
-
   it("joins the listing fields of collected books", async () => {
     const listingId = insertListing("Dune");
     db.prepare(

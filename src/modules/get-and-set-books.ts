@@ -2,7 +2,6 @@ import type { Page } from "puppeteer";
 import db from "../data/database";
 import type { Statement } from "better-sqlite3";
 import { type BookListing, type BookListings } from "../model/BookListing";
-import "dotenv/config";
 
 export async function getBooks(page: Page): Promise<BookListings> {
   return await page.$$eval(".product-container", (elements: Element[]) => {
