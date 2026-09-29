@@ -70,7 +70,8 @@ watches; `pnpm test:run` is the single-run/CI variant.
 - Resolver tests run queries through Apollo's `executeOperation` — no HTTP
   server is started.
 - No test may hit the network (scraper coverage is a future effort).
-- CI (`.github/workflows/ci.yml`) runs lint, build, and tests on PRs.
+- CI runs lint, typecheck, and tests as separate workflows
+  (`.github/workflows/lint.yml`, `typecheck.yml`, `test.yml`) on PRs.
 
 ## Environment & Database
 
