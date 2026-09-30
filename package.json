@@ -46,6 +46,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "graphql": "^16.14.0",
     "http": "0.0.1-security",
     "puppeteer": "^25.9.0"
   }

@@ -5,6 +5,9 @@ const resolvers = {
   Query: {
     ...bookResolver.Query,
   },
+  Mutation: {
+    ...bookResolver.Mutation,
+  },
 };
 
 export default resolvers;

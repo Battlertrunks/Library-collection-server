@@ -13,4 +13,8 @@ export const booksCollectedDefs = `
   extend type Query {
     books_collected: [BooksCollected!]!
   }
+
+  type Mutation {
+    add_book_collected(book_listing_id: ID!): BooksCollected!
+  }
 `;

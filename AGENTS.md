@@ -90,7 +90,9 @@ watches; `pnpm test:run` is the single-run/CI variant.
 
 ## Gotchas
 
-- Legacy `Book` type, `book(id)` query, and Mutation SDL were removed (2026-09); the `books` table they referenced is not part of the SQL schema.
+- Legacy `Book` type and `book(id)` query were removed (2026-09); the `books` table they referenced is not part of the SQL schema.
+- The `Mutation` type is back (2026-09): `add_book_collected(book_listing_id: ID!)` inserts a Collected Book and returns the joined row. Its `GraphQLError`s use `extensions.code` values `INVALID_BOOK_LISTING_ID`, `BOOK_LISTING_NOT_FOUND`, and `BOOK_ALREADY_COLLECTED`.
+- `book_listings.does_own` is legacy: nothing writes it and it is slated for removal. Ownership is tracked by `books_collected` rows; the client subtracts collected listing ids from `book_listings`.
 - `books_collected` rows are joined to `book_listings` via LEFT JOIN in the `books_collected` resolver — series-owned rows (`book_listing_id IS NULL`) return null listing fields.
 - Keep scraping ethical: preserve timeouts, request interception, and rate-limit backoff; respect robots.txt.
 - Port 3000 is hardcoded in `index.ts`.

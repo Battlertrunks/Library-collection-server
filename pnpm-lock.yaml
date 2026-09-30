@@ -32,6 +32,9 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
+      graphql:
+        specifier: ^16.14.0
+        version: 16.14.0
       http:
         specifier: 0.0.1-security
         version: 0.0.1-security
