@@ -42,7 +42,7 @@ const bookResolver: BookResolver = {
     ): BookCollected => {
       const listingId: number = Number(book_listing_id);
 
-      if (!Number.isSafeInteger(listingId) || listingId <= 0) {
+      if (!Number.isInteger(listingId) || listingId <= 0) {
         throw new GraphQLError(`Invalid book listing id: ${book_listing_id}`, {
           extensions: { code: "INVALID_BOOK_LISTING_ID" },
         });
