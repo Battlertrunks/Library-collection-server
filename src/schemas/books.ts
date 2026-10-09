@@ -8,6 +8,7 @@ export const booksDefs = `
     description: String
     published_date: String
     genres: String
+    created_at: String
   }
 
   type Query {

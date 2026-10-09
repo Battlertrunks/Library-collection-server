@@ -6,7 +6,8 @@ import type { BookListing } from "../model/BookListing.js";
 /** Shared listing join so the query and mutation row shapes cannot drift. */
 const collectedBookSelect: string = `
   SELECT bc.id, bc.book_listing_id, bc.date_purchased, bc.completed,
-         bl.title, bl.authors, bl.thumbnail_url, bl.published_date
+         bl.title, bl.authors, bl.thumbnail_url, bl.published_date,
+         bl.created_at
   FROM books_collected AS bc
   LEFT JOIN book_listings AS bl ON bl.id = bc.book_listing_id
 `;

@@ -8,6 +8,7 @@ export const booksCollectedDefs = `
     authors: String
     thumbnail_url: String
     published_date: String
+    created_at: String
   }
 
   extend type Query {

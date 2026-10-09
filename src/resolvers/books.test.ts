@@ -51,6 +51,21 @@ describe("book_listings query", () => {
 
     expect(data).toEqual({ book_listings: [{ title: "The Hobbit" }] });
   });
+
+  it("exposes the created_at timestamp of each listing", async () => {
+    const listingId = insertListing("The Hobbit");
+
+    const data = await runQuery("{ book_listings { id created_at } }");
+
+    expect(data).toEqual({
+      book_listings: [
+        {
+          id: String(listingId),
+          created_at: expect.any(String),
+        },
+      ],
+    });
+  });
 });
 
 describe("books_collected query", () => {
@@ -75,6 +90,7 @@ describe("books_collected query", () => {
         authors
         thumbnail_url
         published_date
+        created_at
         completed
       }
     }`);
@@ -88,6 +104,7 @@ describe("books_collected query", () => {
           authors: "Dune Author",
           thumbnail_url: "https://covers.example/dune.jpg",
           published_date: "1965-08-01",
+          created_at: expect.any(String),
           completed: false,
         },
       ],
