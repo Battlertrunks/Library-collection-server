@@ -32,6 +32,40 @@ async function runQuery(query: string): Promise<Record<string, unknown>> {
   return data ?? {};
 }
 
+type Edge<T> = { node: T; cursor: string };
+type Connection<T> = {
+  edges: Array<Edge<T>>;
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+};
+
+/** Reads a connection field out of a query result. */
+function connectionOf<T>(
+  data: Record<string, unknown>,
+  field: string,
+): Connection<T> {
+  return data[field] as Connection<T>;
+}
+
+/** Builds a book_listings query around the given args and node fields. */
+function listingsQuery(args: string = "", fields: string = "title"): string {
+  return `{
+    book_listings${args} {
+      edges { node { ${fields} } cursor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+}
+
+/** Builds a books_collected query around the given args and node fields. */
+function collectedQuery(args: string = "", fields: string = "title"): string {
+  return `{
+    books_collected${args} {
+      edges { node { ${fields} } cursor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+}
+
 /** Builds the add_book_collected mutation, defaulting to selecting its `id`. */
 function addBookCollectedMutation(
   bookListingId: string,
@@ -43,38 +77,237 @@ function addBookCollectedMutation(
 }
 
 describe("book_listings query", () => {
-  it("returns only listings that are not owned yet", async () => {
+  it("returns listings that are neither owned nor collected", async () => {
     insertListing("The Hobbit");
     insertListing("The Silmarillion", { doesOwn: true });
+    const collected = insertListing("Dune");
+    insertCollected({ bookListingId: collected }, "2026-01-01");
 
-    const data = await runQuery("{ book_listings { title } }");
+    const data = await runQuery(listingsQuery());
 
-    expect(data).toEqual({ book_listings: [{ title: "The Hobbit" }] });
+    const titles = connectionOf<{ title: string }>(
+      data,
+      "book_listings",
+    ).edges.map((edge) => edge.node.title);
+    expect(titles).toEqual(["The Hobbit"]);
   });
 
   it("exposes the created_at timestamp of each listing", async () => {
     const listingId = insertListing("The Hobbit");
 
-    const data = await runQuery("{ book_listings { id created_at } }");
+    const data = await runQuery(listingsQuery("", "id created_at"));
 
-    expect(data).toEqual({
-      book_listings: [
-        {
-          id: String(listingId),
-          created_at: expect.any(String),
-        },
-      ],
+    expect(connectionOf(data, "book_listings").edges).toEqual([
+      {
+        node: { id: String(listingId), created_at: expect.any(String) },
+        cursor: expect.any(String),
+      },
+    ]);
+  });
+
+  it("walks pages with cursors without overlap or gaps", async () => {
+    for (let i = 1; i <= 5; i += 1) {
+      insertListing(`Book ${i}`, { createdAt: `2026-01-0${i} 00:00:00` });
+    }
+
+    const first = await runQuery(listingsQuery("(first: 2)"));
+    const page1 = connectionOf<{ title: string }>(first, "book_listings");
+    expect(page1.edges.map((edge) => edge.node.title)).toEqual([
+      "Book 5",
+      "Book 4",
+    ]);
+    expect(page1.pageInfo.hasNextPage).toBe(true);
+
+    const second = await runQuery(
+      listingsQuery(`(first: 2, after: "${page1.pageInfo.endCursor}")`),
+    );
+    const page2 = connectionOf<{ title: string }>(second, "book_listings");
+    expect(page2.edges.map((edge) => edge.node.title)).toEqual([
+      "Book 3",
+      "Book 2",
+    ]);
+    expect(page2.pageInfo.hasNextPage).toBe(true);
+
+    const third = await runQuery(
+      listingsQuery(`(first: 2, after: "${page2.pageInfo.endCursor}")`),
+    );
+    const page3 = connectionOf<{ title: string }>(third, "book_listings");
+    expect(page3.edges.map((edge) => edge.node.title)).toEqual(["Book 1"]);
+    expect(page3.pageInfo.hasNextPage).toBe(false);
+    expect(page3.pageInfo.endCursor).not.toBeNull();
+  });
+
+  it("sorts titles case-insensitively A to Z and Z to A", async () => {
+    insertListing("Zeta");
+    insertListing("alpha");
+    insertListing("Beta");
+
+    const az = await runQuery(listingsQuery("(sort: TITLE_ASC)"));
+    expect(
+      connectionOf<{ title: string }>(az, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["alpha", "Beta", "Zeta"]);
+
+    const za = await runQuery(listingsQuery("(sort: TITLE_DESC)"));
+    expect(
+      connectionOf<{ title: string }>(za, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Zeta", "Beta", "alpha"]);
+  });
+
+  it("sorts newest created first, breaking ties alphabetically", async () => {
+    insertListing("Zulu", { createdAt: "2026-02-01 00:00:00" });
+    insertListing("Old", { createdAt: "2025-01-01 00:00:00" });
+    insertListing("Alpha", { createdAt: "2026-02-01 00:00:00" });
+
+    const data = await runQuery(listingsQuery("(sort: RECENT)"));
+
+    expect(
+      connectionOf<{ title: string }>(data, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Alpha", "Zulu", "Old"]);
+  });
+
+  it("sorts newest published first, breaking ties alphabetically", async () => {
+    insertListing("Old", { publishedDate: "2001-01-01" });
+    insertListing("New", { publishedDate: "2024-01-01" });
+    insertListing("Also New", { publishedDate: "2024-01-01" });
+
+    const data = await runQuery(listingsQuery("(sort: PUBLISHED)"));
+
+    expect(
+      connectionOf<{ title: string }>(data, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Also New", "New", "Old"]);
+  });
+
+  it("treats COMPLETION as alphabetical for listings", async () => {
+    insertListing("Zeta");
+    insertListing("Alpha");
+
+    const data = await runQuery(listingsQuery("(sort: COMPLETION)"));
+
+    expect(
+      connectionOf<{ title: string }>(data, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Alpha", "Zeta"]);
+  });
+
+  it("searches titles and authors case-insensitively", async () => {
+    insertListing("Dune", { authors: "Frank Herbert" });
+    insertListing("Dropsite Massacre", { authors: "Graham McNeill" });
+    insertListing("The Hobbit", { authors: "J.R.R. Tolkien" });
+
+    const byTitle = await runQuery(listingsQuery('(search: "MASSACRE")'));
+    expect(
+      connectionOf<{ title: string }>(byTitle, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Dropsite Massacre"]);
+
+    const byAuthor = await runQuery(listingsQuery('(search: "tolkien")'));
+    expect(
+      connectionOf<{ title: string }>(byAuthor, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["The Hobbit"]);
+  });
+
+  it("requires every search keyword to match across title and authors", async () => {
+    insertListing("Dune", { authors: "Frank Herbert" });
+    insertListing("The Hobbit", { authors: "J.R.R. Tolkien" });
+
+    const match = await runQuery(listingsQuery('(search: "herbert dune")'));
+    expect(
+      connectionOf<{ title: string }>(match, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Dune"]);
+
+    const noMatch = await runQuery(listingsQuery('(search: "dune tolkien")'));
+    expect(
+      connectionOf<{ title: string }>(noMatch, "book_listings").edges,
+    ).toEqual([]);
+  });
+
+  it("treats LIKE metacharacters literally in search", async () => {
+    insertListing("100% Complete");
+    insertListing("D_une");
+    insertListing("Dune");
+
+    const percent = await runQuery(listingsQuery('(search: "100%")'));
+    expect(
+      connectionOf<{ title: string }>(percent, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["100% Complete"]);
+
+    const underscore = await runQuery(listingsQuery('(search: "d_une")'));
+    expect(
+      connectionOf<{ title: string }>(underscore, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["D_une"]);
+  });
+
+  it("rejects a malformed cursor", async () => {
+    insertListing("Dune");
+
+    const { data, errors } = await runOperation(
+      listingsQuery('(after: "not-a-cursor")'),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]).toMatchObject({
+      message: "Invalid pagination cursor",
+      extensions: { code: "INVALID_CURSOR" },
+    });
+  });
+
+  it("rejects a cursor issued for a different sort", async () => {
+    insertListing("Dune");
+    insertListing("Dropsite Massacre");
+
+    const alphabetical = await runQuery(
+      listingsQuery("(first: 1, sort: TITLE_ASC)"),
+    );
+    const cursor = connectionOf(
+      alphabetical,
+      "book_listings",
+    ).pageInfo.endCursor;
+
+    const { data, errors } = await runOperation(
+      listingsQuery(`(after: "${cursor}", sort: RECENT)`),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]?.extensions?.code).toBe("INVALID_CURSOR");
+  });
+
+  it.each([0, -1, 101])("rejects the invalid page size %i", async (first) => {
+    const { data, errors } = await runOperation(
+      `{ book_listings(first: ${first}) { edges { cursor } } }`,
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]).toMatchObject({
+      message: `Invalid page size: ${first}`,
+      extensions: { code: "INVALID_PAGE_SIZE" },
     });
   });
 });
 
 describe("books_collected query", () => {
   it("joins the listing fields of collected books", async () => {
-    const listingId = insertListing("Dune");
+    const listingId = insertListing("Dune", { publishedDate: "1965-08-01" });
     db.prepare(
       `UPDATE book_listings
-          SET thumbnail_url = 'https://covers.example/dune.jpg',
-              published_date = '1965-08-01'
+          SET thumbnail_url = 'https://covers.example/dune.jpg'
         WHERE id = ?`,
     ).run(listingId);
     const collectedId = insertCollected(
@@ -82,22 +315,16 @@ describe("books_collected query", () => {
       "2026-01-01",
     );
 
-    const data = await runQuery(`{
-      books_collected {
-        id
-        book_listing_id
-        title
-        authors
-        thumbnail_url
-        published_date
-        created_at
-        completed
-      }
-    }`);
+    const data = await runQuery(
+      collectedQuery(
+        "",
+        "id book_listing_id title authors thumbnail_url published_date created_at completed",
+      ),
+    );
 
-    expect(data).toEqual({
-      books_collected: [
-        {
+    expect(connectionOf(data, "books_collected").edges).toEqual([
+      {
+        node: {
           id: String(collectedId),
           book_listing_id: String(listingId),
           title: "Dune",
@@ -107,50 +334,96 @@ describe("books_collected query", () => {
           created_at: expect.any(String),
           completed: false,
         },
-      ],
-    });
+        cursor: expect.any(String),
+      },
+    ]);
   });
 
-  it("returns null listing fields for series-owned entries", async () => {
+  it("excludes series-owned entries", async () => {
     db.prepare("INSERT INTO series_collected (name) VALUES ('A Series')").run();
     const series = db
       .prepare("SELECT id FROM series_collected")
       .get() as { id: number };
-    const collectedId = insertCollected(
-      { bookSeriesId: series.id },
-      "2026-02-01",
-    );
+    insertCollected({ bookSeriesId: series.id }, "2026-02-01");
 
-    const data = await runQuery(
-      "{ books_collected { id book_listing_id title authors } }",
-    );
+    const data = await runQuery(collectedQuery());
 
-    expect(data).toEqual({
-      books_collected: [
-        {
-          id: String(collectedId),
-          book_listing_id: null,
-          title: null,
-          authors: null,
-        },
-      ],
-    });
+    expect(connectionOf(data, "books_collected").edges).toEqual([]);
   });
 
-  it("orders entries by purchase date desc, then id desc", async () => {
-    const oldest = insertCollected({}, "2026-01-01");
-    const earlierTie = insertCollected({}, "2026-02-01");
-    const laterTie = insertCollected({}, "2026-02-01");
+  it("sorts completed books first for COMPLETION, alphabetical within groups", async () => {
+    const alpha = insertListing("Alpha");
+    const bravo = insertListing("Bravo");
+    const charlie = insertListing("Charlie");
+    const delta = insertListing("Delta");
+    insertCollected({ bookListingId: alpha }, "2026-01-01", false);
+    insertCollected({ bookListingId: bravo }, "2026-01-02", true);
+    insertCollected({ bookListingId: charlie }, "2026-01-03", true);
+    insertCollected({ bookListingId: delta }, "2026-01-04", false);
 
-    const data = await runQuery("{ books_collected { id } }");
+    const first = await runQuery(
+      collectedQuery("(first: 2, sort: COMPLETION)"),
+    );
+    const page1 = connectionOf<{ title: string }>(first, "books_collected");
+    expect(page1.edges.map((edge) => edge.node.title)).toEqual([
+      "Bravo",
+      "Charlie",
+    ]);
+    expect(page1.pageInfo.hasNextPage).toBe(true);
 
-    expect(data).toEqual({
-      books_collected: [
-        { id: String(laterTie) },
-        { id: String(earlierTie) },
-        { id: String(oldest) },
-      ],
-    });
+    const second = await runQuery(
+      collectedQuery(
+        `(first: 2, after: "${page1.pageInfo.endCursor}", sort: COMPLETION)`,
+      ),
+    );
+    const page2 = connectionOf<{ title: string }>(second, "books_collected");
+    expect(page2.edges.map((edge) => edge.node.title)).toEqual([
+      "Alpha",
+      "Delta",
+    ]);
+    expect(page2.pageInfo.hasNextPage).toBe(false);
+  });
+
+  it("searches the joined listing title and authors", async () => {
+    const dune = insertListing("Dune", { authors: "Frank Herbert" });
+    const hobbit = insertListing("The Hobbit", { authors: "J.R.R. Tolkien" });
+    insertCollected({ bookListingId: dune }, "2026-01-01");
+    insertCollected({ bookListingId: hobbit }, "2026-01-02");
+
+    const data = await runQuery(collectedQuery('(search: "hobbit tolkien")'));
+
+    expect(
+      connectionOf<{ title: string }>(data, "books_collected").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["The Hobbit"]);
+  });
+
+  it("walks pages with cursors without overlap", async () => {
+    for (let i = 1; i <= 3; i += 1) {
+      const listing = insertListing(`Collected ${i}`);
+      insertCollected(
+        { bookListingId: listing },
+        `2026-01-0${i}`,
+        false,
+      );
+    }
+
+    const first = await runQuery(collectedQuery("(first: 2)"));
+    const page1 = connectionOf<{ title: string }>(first, "books_collected");
+    expect(page1.edges).toHaveLength(2);
+    expect(page1.pageInfo.hasNextPage).toBe(true);
+
+    const second = await runQuery(
+      collectedQuery(`(first: 2, after: "${page1.pageInfo.endCursor}")`),
+    );
+    const page2 = connectionOf<{ title: string }>(second, "books_collected");
+    expect(page2.edges).toHaveLength(1);
+    expect(page2.pageInfo.hasNextPage).toBe(false);
+
+    const firstTitles = page1.edges.map((edge) => edge.node.title);
+    const secondTitles = page2.edges.map((edge) => edge.node.title);
+    expect(new Set([...firstTitles, ...secondTitles]).size).toBe(3);
   });
 });
 

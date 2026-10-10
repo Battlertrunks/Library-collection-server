@@ -12,4 +12,5 @@ export type BookCollected = {
   authors: string | null;
   thumbnail_url: string | null;
   published_date: string | null;
+  created_at: string | null;
 };

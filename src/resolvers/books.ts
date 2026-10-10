@@ -1,16 +1,12 @@
 import { GraphQLError } from "graphql";
 import db from "../data/database.js";
 import type { BookCollected } from "../model/BookCollected.ts";
-import type { BookListing } from "../model/BookListing.js";
-
-/** Shared listing join so the query and mutation row shapes cannot drift. */
-const collectedBookSelect: string = `
-  SELECT bc.id, bc.book_listing_id, bc.date_purchased, bc.completed,
-         bl.title, bl.authors, bl.thumbnail_url, bl.published_date,
-         bl.created_at
-  FROM books_collected AS bc
-  LEFT JOIN book_listings AS bl ON bl.id = bc.book_listing_id
-`;
+import {
+  collectedBookSelect,
+  fetchBookListingsPage,
+  fetchBooksCollectedPage,
+  type PageArgs,
+} from "../modules/book-pagination.ts";
 
 interface AddBookCollectedArgs {
   book_listing_id: string;
@@ -23,18 +19,10 @@ interface BookResolver {
 
 const bookResolver: BookResolver = {
   Query: {
-    book_listings: () => {
-      const query: string =
-        "SELECT * FROM book_listings WHERE does_own = false";
-      return db.prepare(query).all() as BookListing[];
-    },
-    books_collected: () => {
-      const query: string = `
-        ${collectedBookSelect}
-        ORDER BY bc.date_purchased DESC, bc.id DESC
-      `;
-      return db.prepare(query).all() as BookCollected[];
-    },
+    book_listings: (_parent: unknown, args: PageArgs) =>
+      fetchBookListingsPage(args),
+    books_collected: (_parent: unknown, args: PageArgs) =>
+      fetchBooksCollectedPage(args),
   },
   Mutation: {
     add_book_collected: (

@@ -11,8 +11,23 @@ export const booksCollectedDefs = `
     created_at: String
   }
 
+  type BooksCollectedEdge {
+    node: BooksCollected!
+    cursor: String!
+  }
+
+  type BooksCollectedConnection {
+    edges: [BooksCollectedEdge!]!
+    pageInfo: PageInfo!
+  }
+
   extend type Query {
-    books_collected: [BooksCollected!]!
+    books_collected(
+      first: Int = 30
+      after: String
+      search: String
+      sort: BookSort = RECENT
+    ): BooksCollectedConnection!
   }
 
   type Mutation {
