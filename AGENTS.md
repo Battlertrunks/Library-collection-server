@@ -91,7 +91,9 @@ watches; `pnpm test:run` is the single-run/CI variant.
 ## Gotchas
 
 - Legacy `Book` type and `book(id)` query were removed (2026-09); the `books` table they referenced is not part of the SQL schema.
-- The `Mutation` type is back (2026-09): `add_book_collected(book_listing_id: ID!)` inserts a Collected Book and returns the joined row. Its `GraphQLError`s use `extensions.code` values `INVALID_BOOK_LISTING_ID`, `BOOK_LISTING_NOT_FOUND`, and `BOOK_ALREADY_COLLECTED`.
+- The `Mutation` type is back (2026-09): `add_book_collected(book_listing_id: ID!)` inserts a Collected Book, `remove_book_collected(book_listing_id: ID!)` deletes it, and `update_book_progress(book_listing_id: ID!, progress: Int!)` stores reading progress; all return the joined row. Their `GraphQLError`s use `extensions.code` values `INVALID_BOOK_LISTING_ID`, `BOOK_LISTING_NOT_FOUND`, `BOOK_ALREADY_COLLECTED`, `BOOK_NOT_COLLECTED`, and `INVALID_PROGRESS`.
+- `books_collected.progress` is reading progress from 0 to 100. `update_book_progress` keeps `completed` in sync (100 completes the book, below reopens it); `sort: COMPLETION` orders by progress descending, and the query accepts an optional `completed` filter. Existing databases get the new column via a connection-time migration in `src/data/database.ts`.
+- `book_of_the_day` deterministically picks an owned, unfinished book for the server's local calendar day, rotating through the pool ordered by collected id; it returns null when nothing is in progress.
 - `book_listings.does_own` is legacy: nothing writes it and it is slated for removal. Ownership is tracked by `books_collected` rows; the client subtracts collected listing ids from `book_listings`.
 - `books_collected` rows are joined to `book_listings` via LEFT JOIN in the `books_collected` resolver — series-owned rows (`book_listing_id IS NULL`) return null listing fields.
 - Keep scraping ethical: preserve timeouts, request interception, and rate-limit backoff; respect robots.txt.

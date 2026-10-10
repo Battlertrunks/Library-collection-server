@@ -3,11 +3,7 @@ import db from "../data/database.ts";
 
 /** Sort modes shared by the paginated book queries. */
 export type BookSort =
-  | "RECENT"
-  | "TITLE_ASC"
-  | "TITLE_DESC"
-  | "PUBLISHED"
-  | "COMPLETION";
+  "RECENT" | "TITLE_ASC" | "TITLE_DESC" | "PUBLISHED" | "COMPLETION";
 
 /** Default page size when `first` is omitted. */
 export const BOOK_PAGE_SIZE: number = 30;
@@ -20,6 +16,8 @@ export type PageArgs = {
   after?: string | null;
   search?: string | null;
   sort?: BookSort | null;
+  /** When set, only collected rows with this finished state are returned. */
+  completed?: boolean | null;
 };
 
 export type Connection<Row> = {
@@ -44,6 +42,7 @@ type BookCollectedRow = {
   book_listing_id: number | null;
   date_purchased: string;
   completed: number;
+  progress: number;
   title: string | null;
   authors: string | null;
   thumbnail_url: string | null;
@@ -56,7 +55,7 @@ type BookCollectedRow = {
  * cannot drift apart.
  */
 export const collectedBookSelect: string = `
-  SELECT bc.id, bc.book_listing_id, bc.date_purchased, bc.completed,
+  SELECT bc.id, bc.book_listing_id, bc.date_purchased, bc.completed, bc.progress,
          bl.title, bl.authors, bl.thumbnail_url, bl.published_date,
          bl.created_at
   FROM books_collected AS bc
@@ -75,8 +74,8 @@ type CursorPayload = {
   t: string;
   /** Row id, the final deterministic tie-breaker. */
   i: number;
-  /** Completion flag, only meaningful for COMPLETION sorts. */
-  d: number;
+  /** Reading progress percentage, only meaningful for COMPLETION sorts. */
+  p: number;
 };
 
 type SortColumns = {
@@ -84,7 +83,7 @@ type SortColumns = {
   publishedAt: string;
   title: string;
   id: string;
-  completed: string;
+  progress: string;
 };
 
 const listingColumns: SortColumns = {
@@ -92,7 +91,7 @@ const listingColumns: SortColumns = {
   publishedAt: "COALESCE(published_date, '')",
   title: "LOWER(title)",
   id: "id",
-  completed: "0",
+  progress: "0",
 };
 
 const collectedColumns: SortColumns = {
@@ -100,11 +99,11 @@ const collectedColumns: SortColumns = {
   publishedAt: "COALESCE(bl.published_date, '')",
   title: "LOWER(COALESCE(bl.title, ''))",
   id: "bc.id",
-  completed: "bc.completed",
+  progress: "bc.progress",
 };
 
 /**
- * Book listings have no completion flag, so COMPLETION falls back to the
+ * Book listings have no reading progress, so COMPLETION falls back to the
  * alphabetical order the client used to apply locally.
  */
 function effectiveListingsSort(sort: BookSort): EffectiveSort {
@@ -147,11 +146,14 @@ function isCursorPayload(value: unknown): value is CursorPayload {
     typeof record.k === "string" &&
     typeof record.t === "string" &&
     typeof record.i === "number" &&
-    typeof record.d === "number"
+    typeof record.p === "number"
   );
 }
 
-function decodeCursor(cursor: string, expectedSort: EffectiveSort): CursorPayload {
+function decodeCursor(
+  cursor: string,
+  expectedSort: EffectiveSort,
+): CursorPayload {
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
@@ -179,10 +181,7 @@ function buildSearchClause(
   title: string,
   authors: string,
 ): { sql: string; params: Record<string, string> } | null {
-  const keywords = (search ?? "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const keywords = (search ?? "").toLowerCase().split(/\s+/).filter(Boolean);
 
   if (keywords.length === 0) {
     return null;
@@ -209,7 +208,7 @@ function buildOrderBy(sort: EffectiveSort, columns: SortColumns): string {
     case "TITLE_DESC":
       return `${columns.title} DESC, ${columns.id} DESC`;
     case "COMPLETION":
-      return `${columns.completed} DESC, ${columns.title} ASC, ${columns.id} ASC`;
+      return `${columns.progress} DESC, ${columns.title} ASC, ${columns.id} ASC`;
   }
 }
 
@@ -253,9 +252,9 @@ function buildKeysetClause(
       };
     case "COMPLETION":
       return {
-        sql: `(${columns.completed} < @cursorD OR (${columns.completed} = @cursorD AND (${columns.title} > @cursorT OR (${columns.title} = @cursorT AND ${columns.id} > @cursorI))))`,
+        sql: `(${columns.progress} < @cursorP OR (${columns.progress} = @cursorP AND (${columns.title} > @cursorT OR (${columns.title} = @cursorT AND ${columns.id} > @cursorI))))`,
         params: {
-          cursorD: cursor.d,
+          cursorP: cursor.p,
           cursorT: cursor.t,
           cursorI: cursor.i,
         },
@@ -263,7 +262,10 @@ function buildKeysetClause(
   }
 }
 
-function listingCursor(sort: EffectiveSort, row: BookListingRow): CursorPayload {
+function listingCursor(
+  sort: EffectiveSort,
+  row: BookListingRow,
+): CursorPayload {
   return {
     v: 1,
     s: sort,
@@ -275,7 +277,7 @@ function listingCursor(sort: EffectiveSort, row: BookListingRow): CursorPayload 
           : row.title.toLowerCase(),
     t: row.title.toLowerCase(),
     i: row.id,
-    d: 0,
+    p: 0,
   };
 }
 
@@ -294,7 +296,7 @@ function collectedCursor(
           : (row.title ?? "").toLowerCase(),
     t: (row.title ?? "").toLowerCase(),
     i: row.id,
-    d: row.completed,
+    p: row.progress,
   };
 }
 
@@ -388,6 +390,11 @@ export function fetchBooksCollectedPage(
 
   const where: string[] = ["bc.book_listing_id IS NOT NULL"];
   const params: Record<string, unknown> = {};
+
+  if (args.completed !== null && args.completed !== undefined) {
+    where.push("bc.completed = @completed");
+    params.completed = args.completed ? 1 : 0;
+  }
 
   const search = buildSearchClause(
     args.search,

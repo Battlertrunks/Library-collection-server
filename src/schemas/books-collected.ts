@@ -4,6 +4,7 @@ export const booksCollectedDefs = `
     book_listing_id: ID
     date_purchased: String
     completed: Boolean
+    progress: Int
     title: String
     authors: String
     thumbnail_url: String
@@ -27,10 +28,14 @@ export const booksCollectedDefs = `
       after: String
       search: String
       sort: BookSort = RECENT
+      completed: Boolean
     ): BooksCollectedConnection!
+    book_of_the_day: BooksCollected
   }
 
   type Mutation {
     add_book_collected(book_listing_id: ID!): BooksCollected!
+    remove_book_collected(book_listing_id: ID!): BooksCollected!
+    update_book_progress(book_listing_id: ID!, progress: Int!): BooksCollected!
   }
 `;

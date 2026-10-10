@@ -76,6 +76,32 @@ function addBookCollectedMutation(
   }`;
 }
 
+/** Builds the remove_book_collected mutation, defaulting to selecting its `id`. */
+function removeBookCollectedMutation(
+  bookListingId: string,
+  fields: string = "id",
+): string {
+  return `mutation {
+    remove_book_collected(book_listing_id: "${bookListingId}") { ${fields} }
+  }`;
+}
+
+/** Builds the update_book_progress mutation, defaulting to selecting its `id`. */
+function updateBookProgressMutation(
+  bookListingId: string,
+  progress: number,
+  fields: string = "id",
+): string {
+  return `mutation {
+    update_book_progress(book_listing_id: "${bookListingId}", progress: ${progress}) { ${fields} }
+  }`;
+}
+
+/** Builds the book_of_the_day query around the given node fields. */
+function bookOfTheDayQuery(fields: string = "id title"): string {
+  return `{ book_of_the_day { ${fields} } }`;
+}
+
 describe("book_listings query", () => {
   it("returns listings that are neither owned nor collected", async () => {
     insertListing("The Hobbit");
@@ -276,10 +302,8 @@ describe("book_listings query", () => {
     const alphabetical = await runQuery(
       listingsQuery("(first: 1, sort: TITLE_ASC)"),
     );
-    const cursor = connectionOf(
-      alphabetical,
-      "book_listings",
-    ).pageInfo.endCursor;
+    const cursor = connectionOf(alphabetical, "book_listings").pageInfo
+      .endCursor;
 
     const { data, errors } = await runOperation(
       listingsQuery(`(after: "${cursor}", sort: RECENT)`),
@@ -313,12 +337,14 @@ describe("books_collected query", () => {
     const collectedId = insertCollected(
       { bookListingId: listingId },
       "2026-01-01",
+      false,
+      40,
     );
 
     const data = await runQuery(
       collectedQuery(
         "",
-        "id book_listing_id title authors thumbnail_url published_date created_at completed",
+        "id book_listing_id title authors thumbnail_url published_date created_at completed progress",
       ),
     );
 
@@ -333,6 +359,7 @@ describe("books_collected query", () => {
           published_date: "1965-08-01",
           created_at: expect.any(String),
           completed: false,
+          progress: 40,
         },
         cursor: expect.any(String),
       },
@@ -341,9 +368,9 @@ describe("books_collected query", () => {
 
   it("excludes series-owned entries", async () => {
     db.prepare("INSERT INTO series_collected (name) VALUES ('A Series')").run();
-    const series = db
-      .prepare("SELECT id FROM series_collected")
-      .get() as { id: number };
+    const series = db.prepare("SELECT id FROM series_collected").get() as {
+      id: number;
+    };
     insertCollected({ bookSeriesId: series.id }, "2026-02-01");
 
     const data = await runQuery(collectedQuery());
@@ -351,15 +378,15 @@ describe("books_collected query", () => {
     expect(connectionOf(data, "books_collected").edges).toEqual([]);
   });
 
-  it("sorts completed books first for COMPLETION, alphabetical within groups", async () => {
+  it("sorts by reading progress descending for COMPLETION, alphabetical within ties", async () => {
     const alpha = insertListing("Alpha");
     const bravo = insertListing("Bravo");
     const charlie = insertListing("Charlie");
     const delta = insertListing("Delta");
-    insertCollected({ bookListingId: alpha }, "2026-01-01", false);
+    insertCollected({ bookListingId: alpha }, "2026-01-01", false, 40);
     insertCollected({ bookListingId: bravo }, "2026-01-02", true);
-    insertCollected({ bookListingId: charlie }, "2026-01-03", true);
-    insertCollected({ bookListingId: delta }, "2026-01-04", false);
+    insertCollected({ bookListingId: charlie }, "2026-01-03", false, 80);
+    insertCollected({ bookListingId: delta }, "2026-01-04", false, 40);
 
     const first = await runQuery(
       collectedQuery("(first: 2, sort: COMPLETION)"),
@@ -384,6 +411,31 @@ describe("books_collected query", () => {
     expect(page2.pageInfo.hasNextPage).toBe(false);
   });
 
+  it("filters collected books by finished state", async () => {
+    const alpha = insertListing("Alpha");
+    const bravo = insertListing("Bravo");
+    insertCollected({ bookListingId: alpha }, "2026-01-01", false, 25);
+    insertCollected({ bookListingId: bravo }, "2026-01-02", true);
+
+    const unfinished = await runQuery(
+      collectedQuery("(completed: false)", "title progress"),
+    );
+    expect(
+      connectionOf<{ title: string }>(unfinished, "books_collected").edges.map(
+        (edge) => edge.node,
+      ),
+    ).toEqual([{ title: "Alpha", progress: 25 }]);
+
+    const finished = await runQuery(
+      collectedQuery("(completed: true)", "title progress"),
+    );
+    expect(
+      connectionOf<{ title: string }>(finished, "books_collected").edges.map(
+        (edge) => edge.node,
+      ),
+    ).toEqual([{ title: "Bravo", progress: 100 }]);
+  });
+
   it("searches the joined listing title and authors", async () => {
     const dune = insertListing("Dune", { authors: "Frank Herbert" });
     const hobbit = insertListing("The Hobbit", { authors: "J.R.R. Tolkien" });
@@ -402,11 +454,7 @@ describe("books_collected query", () => {
   it("walks pages with cursors without overlap", async () => {
     for (let i = 1; i <= 3; i += 1) {
       const listing = insertListing(`Collected ${i}`);
-      insertCollected(
-        { bookListingId: listing },
-        `2026-01-0${i}`,
-        false,
-      );
+      insertCollected({ bookListingId: listing }, `2026-01-0${i}`, false);
     }
 
     const first = await runQuery(collectedQuery("(first: 2)"));
@@ -424,6 +472,44 @@ describe("books_collected query", () => {
     const firstTitles = page1.edges.map((edge) => edge.node.title);
     const secondTitles = page2.edges.map((edge) => edge.node.title);
     expect(new Set([...firstTitles, ...secondTitles]).size).toBe(3);
+  });
+});
+
+describe("book_of_the_day query", () => {
+  it("returns an unfinished owned book", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01", false, 35);
+
+    const data = await runQuery(
+      bookOfTheDayQuery("id book_listing_id title progress completed"),
+    );
+
+    expect(data).toEqual({
+      book_of_the_day: {
+        id: expect.any(String),
+        book_listing_id: String(listingId),
+        title: "Dune",
+        progress: 35,
+        completed: false,
+      },
+    });
+  });
+
+  it("returns null when every owned book is finished", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01", true);
+
+    const data = await runQuery(bookOfTheDayQuery());
+
+    expect(data).toEqual({ book_of_the_day: null });
+  });
+
+  it("ignores series-owned rows", async () => {
+    insertCollected({}, "2026-01-01");
+
+    const data = await runQuery(bookOfTheDayQuery());
+
+    expect(data).toEqual({ book_of_the_day: null });
   });
 });
 
@@ -463,6 +549,32 @@ describe("add_book_collected mutation", () => {
         completed: false,
       },
     });
+  });
+
+  it("moves the listing out of Books Not Owned and into Books Owned", async () => {
+    const listingId = insertListing("Dune");
+
+    const before = await runQuery(listingsQuery());
+    expect(
+      connectionOf<{ title: string }>(before, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Dune"]);
+
+    await runQuery(addBookCollectedMutation(String(listingId)));
+
+    const listings = await runQuery(listingsQuery());
+    expect(connectionOf(listings, "book_listings").edges).toEqual([]);
+
+    const collected = await runQuery(
+      collectedQuery("", "book_listing_id title"),
+    );
+    expect(connectionOf(collected, "books_collected").edges).toEqual([
+      {
+        node: { book_listing_id: String(listingId), title: "Dune" },
+        cursor: expect.any(String),
+      },
+    ]);
   });
 
   it.each(["abc", "1.5", "", "0", "-3"])(
@@ -519,6 +631,246 @@ describe("add_book_collected mutation", () => {
 
     const { data, errors } = await runOperation(
       addBookCollectedMutation(String(listingId)),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]?.message).toBe("database is unavailable");
+    expect(errors?.[0]?.extensions?.code).toBe("INTERNAL_SERVER_ERROR");
+  });
+});
+
+describe("remove_book_collected mutation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("removes the collected row and returns the joined fields", async () => {
+    const listingId = insertListing("Dune");
+    const collectedId = insertCollected(
+      { bookListingId: listingId },
+      "2026-01-01",
+    );
+
+    const { data, errors } = await runOperation(
+      removeBookCollectedMutation(
+        String(listingId),
+        `
+          id
+          book_listing_id
+          title
+          authors
+          completed
+        `,
+      ),
+    );
+
+    expect(errors).toBeUndefined();
+    expect(data).toEqual({
+      remove_book_collected: {
+        id: String(collectedId),
+        book_listing_id: String(listingId),
+        title: "Dune",
+        authors: "Dune Author",
+        completed: false,
+      },
+    });
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM books_collected").get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("moves the book out of Books Owned and back into Books Not Owned", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01");
+
+    const added = await runQuery(collectedQuery("", "book_listing_id title"));
+    expect(
+      connectionOf<{ title: string }>(added, "books_collected").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Dune"]);
+    const hidden = await runQuery(listingsQuery());
+    expect(connectionOf(hidden, "book_listings").edges).toEqual([]);
+
+    await runQuery(removeBookCollectedMutation(String(listingId)));
+
+    const collected = await runQuery(collectedQuery());
+    expect(connectionOf(collected, "books_collected").edges).toEqual([]);
+
+    const listings = await runQuery(listingsQuery());
+    expect(
+      connectionOf<{ title: string }>(listings, "book_listings").edges.map(
+        (edge) => edge.node.title,
+      ),
+    ).toEqual(["Dune"]);
+  });
+
+  it.each(["abc", "1.5", "", "0", "-3"])(
+    "rejects the invalid book_listing_id %o",
+    async (bookListingId) => {
+      const { data, errors } = await runOperation(
+        removeBookCollectedMutation(bookListingId),
+      );
+
+      expect(data).toBeNull();
+      expect(errors?.[0]).toMatchObject({
+        message: `Invalid book listing id: ${bookListingId}`,
+        extensions: { code: "INVALID_BOOK_LISTING_ID" },
+      });
+    },
+  );
+
+  it("rejects a listing that is not collected", async () => {
+    const listingId = insertListing("Dune");
+
+    const { data, errors } = await runOperation(
+      removeBookCollectedMutation(String(listingId)),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]).toMatchObject({
+      message: `Book listing ${listingId} is not collected`,
+      extensions: { code: "BOOK_NOT_COLLECTED" },
+    });
+  });
+
+  it("surfaces unexpected errors from the database", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01");
+    vi.spyOn(db, "prepare").mockImplementationOnce(() => {
+      throw new Error("database is unavailable");
+    });
+
+    const { data, errors } = await runOperation(
+      removeBookCollectedMutation(String(listingId)),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]?.message).toBe("database is unavailable");
+    expect(errors?.[0]?.extensions?.code).toBe("INTERNAL_SERVER_ERROR");
+  });
+});
+
+describe("update_book_progress mutation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("stores the progress and returns the joined row", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01");
+
+    const { data, errors } = await runOperation(
+      updateBookProgressMutation(
+        String(listingId),
+        65,
+        `
+          id
+          book_listing_id
+          title
+          authors
+          completed
+          progress
+        `,
+      ),
+    );
+
+    expect(errors).toBeUndefined();
+    expect(data).toEqual({
+      update_book_progress: {
+        id: expect.any(String),
+        book_listing_id: String(listingId),
+        title: "Dune",
+        authors: "Dune Author",
+        completed: false,
+        progress: 65,
+      },
+    });
+  });
+
+  it("completes the book at 100% and reopens it below", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01");
+
+    const finished = await runOperation(
+      updateBookProgressMutation(String(listingId), 100, "completed progress"),
+    );
+    expect(finished.data).toEqual({
+      update_book_progress: { completed: true, progress: 100 },
+    });
+
+    const reopened = await runOperation(
+      updateBookProgressMutation(String(listingId), 99, "completed progress"),
+    );
+    expect(reopened.data).toEqual({
+      update_book_progress: { completed: false, progress: 99 },
+    });
+  });
+
+  it.each([-1, 101])(
+    "rejects the out-of-range progress %i",
+    async (progress) => {
+      const listingId = insertListing("Dune");
+      const collectedId = insertCollected(
+        { bookListingId: listingId },
+        "2026-01-01",
+      );
+
+      const { data, errors } = await runOperation(
+        updateBookProgressMutation(String(listingId), progress),
+      );
+
+      expect(data).toBeNull();
+      expect(errors?.[0]).toMatchObject({
+        message: `Invalid progress: ${progress}`,
+        extensions: { code: "INVALID_PROGRESS" },
+      });
+      expect(
+        db
+          .prepare("SELECT progress FROM books_collected WHERE id = ?")
+          .get(collectedId),
+      ).toEqual({ progress: 0 });
+    },
+  );
+
+  it.each(["abc", "1.5", "", "0", "-3"])(
+    "rejects the invalid book_listing_id %o",
+    async (bookListingId) => {
+      const { data, errors } = await runOperation(
+        updateBookProgressMutation(bookListingId, 50),
+      );
+
+      expect(data).toBeNull();
+      expect(errors?.[0]).toMatchObject({
+        message: `Invalid book listing id: ${bookListingId}`,
+        extensions: { code: "INVALID_BOOK_LISTING_ID" },
+      });
+    },
+  );
+
+  it("rejects a listing that is not collected", async () => {
+    const listingId = insertListing("Dune");
+
+    const { data, errors } = await runOperation(
+      updateBookProgressMutation(String(listingId), 50),
+    );
+
+    expect(data).toBeNull();
+    expect(errors?.[0]).toMatchObject({
+      message: `Book listing ${listingId} is not collected`,
+      extensions: { code: "BOOK_NOT_COLLECTED" },
+    });
+  });
+
+  it("surfaces unexpected errors from the database", async () => {
+    const listingId = insertListing("Dune");
+    insertCollected({ bookListingId: listingId }, "2026-01-01");
+    vi.spyOn(db, "prepare").mockImplementationOnce(() => {
+      throw new Error("database is unavailable");
+    });
+
+    const { data, errors } = await runOperation(
+      updateBookProgressMutation(String(listingId), 50),
     );
 
     expect(data).toBeNull();

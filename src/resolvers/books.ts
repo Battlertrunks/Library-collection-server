@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import db from "../data/database.js";
 import type { BookCollected } from "../model/BookCollected.ts";
+import { fetchBookOfTheDay } from "../modules/book-of-the-day.ts";
 import {
   collectedBookSelect,
   fetchBookListingsPage,
@@ -8,13 +9,39 @@ import {
   type PageArgs,
 } from "../modules/book-pagination.ts";
 
-interface AddBookCollectedArgs {
+interface BookListingIdArgs {
   book_listing_id: string;
 }
+
+interface UpdateBookProgressArgs {
+  book_listing_id: string;
+  progress: number;
+}
+
+/** Highest valid reading progress, at which a book counts as completed. */
+const MAX_PROGRESS: number = 100;
 
 interface BookResolver {
   Query: object;
   Mutation: object;
+}
+
+/**
+ * Parses a `book_listing_id` GraphQL argument, rejecting anything that is not
+ * a positive integer.
+ * @param rawId The raw argument value.
+ * @returns The parsed listing id.
+ */
+function parseBookListingId(rawId: string): number {
+  const listingId: number = Number(rawId);
+
+  if (!Number.isInteger(listingId) || listingId <= 0) {
+    throw new GraphQLError(`Invalid book listing id: ${rawId}`, {
+      extensions: { code: "INVALID_BOOK_LISTING_ID" },
+    });
+  }
+
+  return listingId;
 }
 
 const bookResolver: BookResolver = {
@@ -23,19 +50,14 @@ const bookResolver: BookResolver = {
       fetchBookListingsPage(args),
     books_collected: (_parent: unknown, args: PageArgs) =>
       fetchBooksCollectedPage(args),
+    book_of_the_day: (): BookCollected | null => fetchBookOfTheDay(),
   },
   Mutation: {
     add_book_collected: (
       _parent: unknown,
-      { book_listing_id }: AddBookCollectedArgs,
+      { book_listing_id }: BookListingIdArgs,
     ): BookCollected => {
-      const listingId: number = Number(book_listing_id);
-
-      if (!Number.isInteger(listingId) || listingId <= 0) {
-        throw new GraphQLError(`Invalid book listing id: ${book_listing_id}`, {
-          extensions: { code: "INVALID_BOOK_LISTING_ID" },
-        });
-      }
+      const listingId: number = parseBookListingId(book_listing_id);
 
       const listing: unknown = db
         .prepare("SELECT id FROM book_listings WHERE id = ?")
@@ -66,6 +88,64 @@ const bookResolver: BookResolver = {
       return db
         .prepare(query)
         .get(Number(insert.lastInsertRowid)) as BookCollected;
+    },
+    remove_book_collected: (
+      _parent: unknown,
+      { book_listing_id }: BookListingIdArgs,
+    ): BookCollected => {
+      const listingId: number = parseBookListingId(book_listing_id);
+
+      const collected = db
+        .prepare(`${collectedBookSelect} WHERE bc.book_listing_id = ?`)
+        .get(listingId) as BookCollected | undefined;
+
+      if (!collected) {
+        throw new GraphQLError(`Book listing ${listingId} is not collected`, {
+          extensions: { code: "BOOK_NOT_COLLECTED" },
+        });
+      }
+
+      db.prepare("DELETE FROM books_collected WHERE id = ?").run(collected.id);
+
+      return collected;
+    },
+    update_book_progress: (
+      _parent: unknown,
+      { book_listing_id, progress }: UpdateBookProgressArgs,
+    ): BookCollected => {
+      const listingId: number = parseBookListingId(book_listing_id);
+
+      if (
+        !Number.isInteger(progress) ||
+        progress < 0 ||
+        progress > MAX_PROGRESS
+      ) {
+        throw new GraphQLError(`Invalid progress: ${progress}`, {
+          extensions: { code: "INVALID_PROGRESS" },
+        });
+      }
+
+      const collected = db
+        .prepare(`${collectedBookSelect} WHERE bc.book_listing_id = ?`)
+        .get(listingId) as BookCollected | undefined;
+
+      if (!collected) {
+        throw new GraphQLError(`Book listing ${listingId} is not collected`, {
+          extensions: { code: "BOOK_NOT_COLLECTED" },
+        });
+      }
+
+      // Progress is the source of truth for the finished flag: hitting 100%
+      // completes the book, moving back below it reopens it.
+      db.prepare(
+        `UPDATE books_collected
+            SET progress = ?, completed = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+      ).run(progress, progress >= MAX_PROGRESS ? 1 : 0, collected.id);
+
+      return db
+        .prepare(`${collectedBookSelect} WHERE bc.id = ?`)
+        .get(collected.id) as BookCollected;
     },
   },
 };

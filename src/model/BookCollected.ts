@@ -8,6 +8,8 @@ export type BookCollected = {
   book_listing_id: number | null;
   date_purchased: string;
   completed: number;
+  /** Reading progress as a percentage between 0 and 100. */
+  progress: number;
   title: string | null;
   authors: string | null;
   thumbnail_url: string | null;

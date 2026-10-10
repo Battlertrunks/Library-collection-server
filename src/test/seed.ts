@@ -46,25 +46,29 @@ export function insertListing(
  * @param {{ bookListingId?: number, bookSeriesId?: number }} owner - The owning row
  * @param {string} datePurchased - Purchase date, used for ordering
  * @param {boolean} [completed] - Whether the book has been read
+ * @param {number} [progress] - Reading progress (0-100); defaults to the
+ * completed flag's equivalent
  * @returns {number} The `id` of the inserted row
  */
 export function insertCollected(
   owner: { bookListingId?: number; bookSeriesId?: number },
   datePurchased: string,
   completed: boolean = false,
+  progress: number = completed ? 100 : 0,
 ): number {
   const info = db
     .prepare(
       `INSERT INTO books_collected
-         (book_listing_id, book_series_id, date_purchased, completed)
+         (book_listing_id, book_series_id, date_purchased, completed, progress)
        VALUES
-         (@book_listing_id, @book_series_id, @date_purchased, @completed)`,
+         (@book_listing_id, @book_series_id, @date_purchased, @completed, @progress)`,
     )
     .run({
       book_listing_id: owner.bookListingId ?? null,
       book_series_id: owner.bookSeriesId ?? null,
       date_purchased: datePurchased,
       completed: completed ? 1 : 0,
+      progress,
     });
 
   return Number(info.lastInsertRowid);
